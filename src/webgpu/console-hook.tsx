@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 
-export const useConsoleHook = <T,>(name: string, callback: () => T) => {
+export const useConsoleHook = <T,>(
+  name: string,
+  callback: () => T
+): (() => T) => {
   const callbakRef = useRef(callback);
   callbakRef.current = callback;
 
@@ -25,5 +28,5 @@ export const useConsoleHook = <T,>(name: string, callback: () => T) => {
     });
   }, [name, exec]);
 
-  return exec;
+  return exec as () => T;
 };
