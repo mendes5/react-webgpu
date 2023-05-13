@@ -4,12 +4,12 @@ import Head from "next/head";
 import { api } from "~/utils/api";
 
 import { type FC } from "react";
-import { WebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
-import { Inspector } from "~/webgpu/debug";
-import { WebGPUDevice, useGPUDevice } from "~/webgpu/gpu-device";
-import { RenderController, useFrame } from "~/webgpu/per-frame";
+import { useWebGPUContext } from "~/webgpu/canvas";
+import { useGPUDevice } from "~/webgpu/gpu-device";
+import { useFrame } from "~/webgpu/per-frame";
 import { usePipeline, useShaderModule } from "~/webgpu/shader";
-import styles from "./style.module.css";
+import { immediateRenderPass, renderPass } from "~/webgpu/calls";
+import { WebGPUApp } from "~/helpers/webgpu-app";
 
 const Example: FC = () => {
   const entireShaderApparently = useShaderModule(
@@ -49,15 +49,12 @@ const Example: FC = () => {
       ],
     };
 
-    const encoder = device.createCommandEncoder({ label: "our encoder" });
-
-    const pass = encoder.beginRenderPass(renderPassDescriptor);
-    pass.setPipeline(pipeline);
-    pass.draw(3);
-    pass.end();
-
-    const commandBuffer = encoder.finish();
-    device.queue.submit([commandBuffer]);
+    immediateRenderPass(device, "triangle encoder", (encoder) => {
+      renderPass(encoder, renderPassDescriptor, (pass) => {
+        pass.setPipeline(pipeline);
+        pass.draw(3);
+      });
+    });
   });
 
   return null;
@@ -73,21 +70,9 @@ const Home: NextPage = () => {
         <link rel="icon" href="/favicon.svg" />
         <meta rel="app-version" content={version.data} />
       </Head>
-      <Inspector name="root">
-        <RenderController enabled>
-          <WebGPUDevice fallback={<h1>Failed to create GPUDevice</h1>}>
-            <div className={styles.root}>
-              <WebGPUCanvas
-                fallback={<h1>Failed to create Canvas</h1>}
-                width={500}
-                height={500}
-              >
-                <Example />
-              </WebGPUCanvas>
-            </div>
-          </WebGPUDevice>
-        </RenderController>
-      </Inspector>
+      <WebGPUApp>
+        <Example />
+      </WebGPUApp>
     </>
   );
 };

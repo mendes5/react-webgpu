@@ -42,3 +42,37 @@ export function createShaderModule(
 
   return shader;
 }
+
+export const immediateRenderPass = (
+  device: GPUDevice,
+  label: string,
+  callback: (encode: GPUCommandEncoder) => void
+) => {
+  const encoder = device.createCommandEncoder({ label });
+
+  callback(encoder);
+
+  const commandBuffer = encoder.finish();
+
+  device.queue.submit([commandBuffer]);
+};
+
+export const renderPass = (
+  encoder: GPUCommandEncoder,
+  descriptor: GPURenderPassDescriptor,
+  callback: (pass: GPURenderPassEncoder) => void
+) => {
+  const pass = encoder.beginRenderPass(descriptor);
+  callback(pass);
+  pass.end();
+};
+
+export const computePass = (
+  encoder: GPUCommandEncoder,
+  descriptor: GPUComputePassDescriptor,
+  callback: (pass: GPUComputePassEncoder) => void
+) => {
+  const pass = encoder.beginComputePass(descriptor);
+  callback(pass);
+  pass.end();
+};

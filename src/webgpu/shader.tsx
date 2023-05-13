@@ -26,14 +26,18 @@ export const useShaderModule = (code: string, label?: string) => {
   }, [device, code, label]);
 };
 
-const PIPELINE_CACHE: Map<GPUShaderModule, GPURenderPipeline> = new Map();
+const RENDER_PIPELINE_CACHE: Map<GPUShaderModule, GPURenderPipeline> =
+  new Map();
+
+const COMPUTE_PIPELINE_CACHE: Map<GPUShaderModule, GPUComputePipeline> =
+  new Map();
 
 export const usePipeline = (shader: GPUShaderModule, label?: string) => {
   const device = useGPUDevice();
   const format = usePresentationFormat();
 
   return useMemo(() => {
-    const fromCache = PIPELINE_CACHE.get(shader);
+    const fromCache = RENDER_PIPELINE_CACHE.get(shader);
 
     if (fromCache) {
       return fromCache;
@@ -55,4 +59,30 @@ export const usePipeline = (shader: GPUShaderModule, label?: string) => {
 
     return pipeline;
   }, [device, label, shader, format]);
+};
+
+export const useComputePipeline = (
+  shader: GPUShaderModule,
+  label?: string
+): GPUComputePipeline => {
+  const device = useGPUDevice();
+
+  return useMemo(() => {
+    const fromCache = COMPUTE_PIPELINE_CACHE.get(shader);
+
+    if (fromCache) {
+      return fromCache;
+    }
+
+    const pipeline = device.createComputePipeline({
+      label,
+      layout: "auto",
+      compute: {
+        module: shader,
+        entryPoint: "computeMain",
+      },
+    });
+
+    return pipeline;
+  }, [device, label, shader]);
 };
