@@ -42,7 +42,7 @@ const Example: FC = () => {
       colorAttachments: [
         {
           view: context.getCurrentTexture().createView(),
-          clearValue: [0.3, 0.3, 0.0, 1],
+          clearValue: [0.0, 0.0, 0.1, 1],
           loadOp: "clear",
           storeOp: "store",
         },
@@ -70,7 +70,7 @@ const Home: NextPage = () => {
         <link rel="icon" href="/favicon.svg" />
         <meta rel="app-version" content={version.data} />
       </Head>
-      <WebGPUApp>
+      <WebGPUApp fullscreen>
         <Example />
       </WebGPUApp>
     </>

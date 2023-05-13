@@ -6,11 +6,17 @@ import { RenderController } from "~/webgpu/per-frame";
 
 type Props = {
   canvas?: boolean;
+  fullscreen?: boolean;
+  width?: number;
+  height?: number;
 };
 
 export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
   children,
   canvas = true,
+  fullscreen,
+  width,
+  height,
 }) => {
   return (
     <Inspector name="root">
@@ -18,9 +24,10 @@ export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
         <WebGPUDevice fallback={<h1>Failed to create GPUDevice</h1>}>
           {canvas ? (
             <WebGPUCanvas
+              fullscreen={fullscreen}
               fallback={<h1>Failed to create Canvas</h1>}
-              width={500}
-              height={500}
+              width={width}
+              height={height}
             >
               {children}
             </WebGPUCanvas>

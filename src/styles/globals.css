@@ -5,7 +5,8 @@
 @import url("./reset.css");
 
 html,
-body {
+body,
+#__next {
   margin: 0;
   height: 100%;
 }

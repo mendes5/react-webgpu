@@ -9,6 +9,7 @@ import {
 import { useIsClient, useIsMounted } from "usehooks-ts";
 import { useInspector } from "./debug";
 import { requestAdapter } from "./calls";
+import { useEffectInvalidator } from "~/utils/hooks";
 
 const GPUDeviceContext = createContext<GPUDevice | null>(null);
 
@@ -40,12 +41,26 @@ export const WebGPUDevice: FC<Props> = ({ children, fallback }) => {
 
   const [inpect, uninspect] = useInspector("WebGPUDevice");
 
+  const [cacheBurst, invalidateDevice] = useEffectInvalidator();
+
   useEffect(() => {
     requestAdapter()
       .then((freshDevice) => {
         if (isMounted()) {
           inpect(freshDevice);
           setDevice(freshDevice);
+
+          freshDevice.lost
+            .then((info) => {
+              console.error(`WebGPU device was lost: ${info.message}`);
+
+              if (isMounted()) {
+                if (info.reason !== "destroyed") {
+                  invalidateDevice();
+                }
+              }
+            })
+            .catch(console.error);
         }
       })
       .catch((error: Error) => {
@@ -57,7 +72,8 @@ export const WebGPUDevice: FC<Props> = ({ children, fallback }) => {
     return () => {
       uninspect();
     };
-  }, [isMounted, uninspect, inpect]);
+    // eslint-disable-next-line
+  }, [isMounted, uninspect, inpect, cacheBurst, cacheBurst]);
 
   const isClient = useIsClient();
 

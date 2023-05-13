@@ -1,5 +1,10 @@
-import type { ForwardedRef, MutableRefObject, RefCallback } from "react";
+import {
+  type ForwardedRef,
+  type MutableRefObject,
+  type RefCallback,
+} from "react";
 import { useEffect, useRef } from "react";
+import { useCounter } from "usehooks-ts";
 
 type CompatibleRef<T> = MutableRefObject<T> | RefCallback<T> | ForwardedRef<T>;
 
@@ -19,4 +24,10 @@ export const useCombinedRefs = <T>(...refs: CompatibleRef<T | null>[]) => {
   }, [refs]);
 
   return targetRef;
+};
+
+export const useEffectInvalidator = () => {
+  const { count, increment } = useCounter(0);
+
+  return [count, increment] as const;
 };

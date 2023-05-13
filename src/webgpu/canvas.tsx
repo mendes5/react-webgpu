@@ -6,11 +6,13 @@ import {
   useEffect,
   useRef,
   useState,
+  useMemo,
 } from "react";
 import { useCombinedRefs } from "~/utils/hooks";
 import { useInspector } from "./debug";
 import { useGPUDevice } from "./gpu-device";
 import { configureContextPresentation, getPresentationFormat } from "./calls";
+import { useAutoSize } from "./auto-size";
 
 const WebGPUCanvasContext = createContext<HTMLCanvasElement | null>(null);
 const WebGPUContext = createContext<GPUCanvasContext | null>(null);
@@ -55,14 +57,16 @@ export const useWebGPUContext = (): GPUCanvasContext => {
 type Props = {
   width?: number;
   height?: number;
+  fullscreen?: boolean;
   children?: ReactNode;
   fallback: ReactNode;
 };
 
 export const WebGPUCanvas = forwardRef<HTMLCanvasElement, Props>(
-  ({ children, width, height }, ref) => {
+  ({ children, width, height, fullscreen = false }, ref) => {
     const ownRef = useRef<HTMLCanvasElement>(null);
-    const inner = useCombinedRefs<HTMLCanvasElement>(ref, ownRef);
+    const autoSize = useAutoSize();
+    const inner = useCombinedRefs<HTMLCanvasElement>(ref, ownRef, autoSize);
     const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
     const [context, setContext] = useState<GPUCanvasContext | null | Error>(
       null
@@ -100,9 +104,22 @@ export const WebGPUCanvas = forwardRef<HTMLCanvasElement, Props>(
       };
     }, [inspectCanvas, uninspectContext, inspectContext, device]);
 
+    const [className, size] = useMemo(() => {
+      if (fullscreen) {
+        return ["w-full h-full", { width: undefined, height: undefined }];
+      } else {
+        return ["", { width, height }];
+      }
+    }, [fullscreen, width, height]);
+
     return (
       <>
-        <canvas width={width} height={height} ref={inner}></canvas>
+        <canvas
+          className={className}
+          width={size.width}
+          height={size.height}
+          ref={inner}
+        ></canvas>
 
         {canvas && (
           <WebGPUCanvasContext.Provider value={canvas}>
