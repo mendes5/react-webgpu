@@ -3,6 +3,7 @@ import { useGPUDevice } from "./gpu-device";
 import stringHash from "string-hash";
 import { createShaderModule } from "./calls";
 import { usePresentationFormat } from "./canvas";
+import { lResource } from "./logger";
 
 const SHADER_CACHE: Map<number, GPUShaderModule> = new Map();
 
@@ -19,6 +20,8 @@ export const useShaderModule = (code: string, label?: string) => {
     }
 
     const shader = createShaderModule(device, code, label);
+
+    lResource("Shader created", { hash, code: [code], label });
 
     SHADER_CACHE.set(hash, shader);
 
@@ -40,6 +43,7 @@ export const usePipeline = (shader: GPUShaderModule, label?: string) => {
     const fromCache = RENDER_PIPELINE_CACHE.get(shader);
 
     if (fromCache) {
+      RENDER_PIPELINE_CACHE.get(shader);
       return fromCache;
     }
 
@@ -55,6 +59,15 @@ export const usePipeline = (shader: GPUShaderModule, label?: string) => {
         entryPoint: "fsMain",
         targets: [{ format }],
       },
+    });
+
+    RENDER_PIPELINE_CACHE.set(shader, pipeline);
+
+    lResource("Pipeline created", {
+      pipeline,
+      shader,
+      format,
+      RENDER_PIPELINE_CACHE,
     });
 
     return pipeline;

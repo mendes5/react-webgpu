@@ -3,6 +3,7 @@ import { WebGPUCanvas } from "~/webgpu/canvas";
 import { Inspector } from "~/webgpu/debug";
 import { WebGPUDevice } from "~/webgpu/gpu-device";
 import { RenderController } from "~/webgpu/per-frame";
+import { Overlay } from "./overlay";
 
 type Props = {
   canvas?: boolean;
@@ -36,6 +37,7 @@ export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
           )}
         </WebGPUDevice>
       </RenderController>
+      <Overlay />
     </Inspector>
   );
 };

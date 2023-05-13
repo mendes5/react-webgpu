@@ -1,3 +1,5 @@
+import { lResource } from "./logger";
+
 export function getPresentationFormat() {
   return navigator.gpu.getPreferredCanvasFormat();
 }
@@ -7,6 +9,8 @@ export function configureContextPresentation(
   context: GPUCanvasContext
 ) {
   const presentationFormat = getPresentationFormat();
+
+  lResource("Presentation format configured", { presentationFormat });
 
   context.configure({
     device,
@@ -26,6 +30,8 @@ export async function requestAdapter() {
   if (!device) {
     throw new Error("Failed to request devide");
   }
+
+  lResource("Device created", { device });
 
   return device;
 }
