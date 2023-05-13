@@ -21,6 +21,7 @@
     "strictNullChecks": true,
     "strictPropertyInitialization": true,
     "baseUrl": ".",
+    "typeRoots": ["./node_modules/@webgpu/types", "./node_modules/@types"],
     "paths": {
       "~/*": ["./src/*"]
     }
