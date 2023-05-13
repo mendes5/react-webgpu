@@ -1,12 +1,13 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useMemo, type FC } from "react";
+import { useMemo, type FC, useState } from "react";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useComputePipeline, useShaderModule } from "~/webgpu/shader";
 import { computePass, immediateRenderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/helpers/webgpu-app";
 import { useConsoleHook } from "~/webgpu/console-hook";
+import { useMutation } from "@tanstack/react-query";
 
 const Example: FC = () => {
   const entireShaderApparently = useShaderModule(
@@ -58,10 +59,12 @@ const Example: FC = () => {
     return { resultBuffer, bindGroup, workBuffer };
   }, [device, input, pipeline]);
 
-  useConsoleHook("doCompute", async () => {
+  const doCompute = useConsoleHook("doCompute", async () => {
     const computeDescriptor: GPUComputePassDescriptor = {
       label: "our basic canvas renderPass",
     };
+
+    const start = performance.now();
 
     immediateRenderPass(device, "doubling encoder", (encoder) => {
       computePass(encoder, computeDescriptor, (pass) => {
@@ -85,11 +88,44 @@ const Example: FC = () => {
     const result = new Float32Array(resultBuffer.getMappedRange().slice());
     resultBuffer.unmap();
 
-    console.log("input", input);
-    console.log("result", result);
+    const end = performance.now();
+
+    return { input, result, elapsed: end - start };
   });
 
-  return null;
+  const doComputeMutation = useMutation(doCompute);
+
+  const [result, setResult] = useState("");
+
+  return (
+    <div className="flex w-1/5 flex-col gap-4">
+      <button
+        className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
+        disabled={doComputeMutation.isLoading}
+        onClick={() => {
+          doCompute()
+            ?.then(({ input, result, elapsed }) => {
+              const out = {
+                input: [...input],
+                output: [...result],
+                elapsed,
+              };
+
+              setResult(JSON.stringify(out, null, "  "));
+            })
+            .catch(console.error);
+        }}
+      >
+        Double by 2 using compute shader
+      </button>
+      <textarea
+        className="h-2/3 min-h-[500px] w-full font-mono"
+        readOnly
+        disabled
+        value={result}
+      />
+    </div>
+  );
 };
 
 const Home: NextPage = () => {
