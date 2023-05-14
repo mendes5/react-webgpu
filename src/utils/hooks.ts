@@ -3,10 +3,11 @@ import {
   type ForwardedRef,
   type MutableRefObject,
   type RefCallback,
+  useState,
 } from "react";
 import { useEffect, useRef } from "react";
 import stringHash from "string-hash";
-import { useCounter } from "usehooks-ts";
+import { useCounter, useIsMounted } from "usehooks-ts";
 
 type CompatibleRef<T> = MutableRefObject<T> | RefCallback<T> | ForwardedRef<T>;
 
@@ -68,4 +69,42 @@ export const useHashedCache = <T>(
     }
     // eslint-disable-next-line
   }, [prefix, ...deps, ...hashes]);
+};
+
+type AsyncState<T> =
+  | {
+      type: "pending";
+    }
+  | {
+      type: "success";
+      value: T;
+    }
+  | {
+      type: "error";
+      error: Error;
+    };
+
+export const useAsyncResource = <T>(
+  generator: () => Promise<T>,
+  deps: unknown[]
+): AsyncState<T> => {
+  const [result, setResult] = useState<AsyncState<T>>({ type: "pending" });
+
+  const isMounted = useIsMounted();
+
+  useEffect(() => {
+    generator()
+      .then((value) => {
+        if (isMounted()) {
+          setResult({ type: "success", value });
+        }
+      })
+      .catch((error: Error) => {
+        if (isMounted()) {
+          setResult({ type: "error", error });
+        }
+      });
+  }, deps);
+
+  return result;
 };

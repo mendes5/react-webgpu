@@ -9,8 +9,14 @@ import { usePipeline, useShaderModule } from "~/webgpu/shader";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/helpers/webgpu-app";
 import { ToOverlay } from "~/helpers/overlay";
-import { useHashedCache } from "~/utils/hooks";
+import { useAsyncResource, useHashedCache } from "~/utils/hooks";
 import Link from "next/link";
+
+async function loadImageBitmap(url: string) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return await createImageBitmap(blob, { colorSpaceConversion: "none" });
+}
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",
@@ -76,37 +82,27 @@ const Example: FC = () => {
   const [modeV, setModeV] = useState<string>(AddressMode.repeat);
   const [magFilter, setMagFilter] = useState<string>(FilterMode.nearest);
   const [minFilter, setMingFilter] = useState<string>(FilterMode.nearest);
-  const scaleRef = useRef(1);
 
-  const { texture } = useMemo(() => {
-    const kTextureWidth = 5;
-    const kTextureHeight = 7;
-    const _ = [255, 0, 0, 255]; // red
-    const y = [255, 255, 0, 255]; // yellow
-    const b = [0, 0, 255, 255]; // blue
-
-    // prettier-ignore
-    const textureData = new Uint8Array([   
-      _, _, _, _, _,
-      _, y, _, _, _,
-      _, y, _, _, _,
-      _, y, y, _, _,
-      _, y, _, _, _,
-      _, y, y, y, _,
-      b, _, _, _, _,
-    ].flat());
+  const textureState = useAsyncResource(async () => {
+    const url = "/resources/f-texture.png";
+    const source = await loadImageBitmap(url);
 
     const texture = device.createTexture({
-      size: [kTextureWidth, kTextureHeight],
+      label: url,
       format: "rgba8unorm",
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      size: [source.width, source.height],
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        // for some reason RENDER_ATTACHMENT
+        // not sure why since we are not rendering shit
+        GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
-    device.queue.writeTexture(
+    device.queue.copyExternalImageToTexture(
+      { source, flipY: true },
       { texture },
-      textureData,
-      { bytesPerRow: kTextureWidth * 4 },
-      { width: kTextureWidth, height: kTextureHeight }
+      { width: source.width, height: source.height }
     );
 
     return { texture };
@@ -150,17 +146,21 @@ const Example: FC = () => {
   );
 
   const { bindGroup } = useMemo(() => {
-    const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: sampler },
-        { binding: 1, resource: texture.createView() },
-        { binding: 2, resource: { buffer: uniformBuffer } },
-      ],
-    });
+    if (textureState.type === "success") {
+      const bindGroup = device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: sampler },
+          { binding: 1, resource: textureState.value.texture.createView() },
+          { binding: 2, resource: { buffer: uniformBuffer } },
+        ],
+      });
 
-    return { bindGroup };
-  }, [sampler, device, pipeline, uniformBuffer, texture]);
+      return { bindGroup };
+    } else {
+      return { bindGroup: null };
+    }
+  }, [sampler, device, pipeline, uniformBuffer, textureState]);
 
   const canvas = useWebGPUCanvas();
 
@@ -181,43 +181,29 @@ const Example: FC = () => {
 
     immediateRenderPass(device, "triangle encoder", (encoder) => {
       renderPass(encoder, renderPassDescriptor, (pass) => {
-        pass.setPipeline(pipeline);
-        pass.setBindGroup(0, bindGroup);
+        if (bindGroup) {
+          pass.setPipeline(pipeline);
+          pass.setBindGroup(0, bindGroup);
 
-        // compute a scale that will draw our 0 to 1 clip space quad
-        // 2x2 pixels in the canvas.
-        const scaleX = (4 / canvas.width) * scaleRef.current;
-        const scaleY = (4 / canvas.height) * scaleRef.current;
+          // compute a scale that will draw our 0 to 1 clip space quad
+          // 2x2 pixels in the canvas.
+          const scaleX = (4 / canvas.width) * 100;
+          const scaleY = (4 / canvas.height) * 100;
 
-        uniformValues.set([scaleX, scaleY], kScaleOffset); // set the scale
-        uniformValues.set([Math.sin(time * 0.25) * 0.8, -0.8], kOffsetOffset); // set the offset
+          uniformValues.set([scaleX, scaleY], kScaleOffset); // set the scale
+          uniformValues.set([Math.sin(time * 0.25) * 0.8, -0.8], kOffsetOffset); // set the offset
 
-        // copy the values from JavaScript to the GPU
-        device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+          // copy the values from JavaScript to the GPU
+          device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
-        pass.draw(6);
+          pass.draw(6);
+        }
       });
     });
   });
 
-  const spanRef = useRef<HTMLSpanElement>(null);
-
   return (
     <ToOverlay>
-      <label className="font-bold text-white">
-        Scale:{" "}
-        <input
-          type="range"
-          min={0.5}
-          defaultValue={1}
-          max={6}
-          onInput={(event) => {
-            scaleRef.current = parseInt(event.currentTarget.value, 10);
-          }}
-        />
-        <span ref={spanRef}>{scaleRef.current}</span>
-      </label>
-
       <select
         onChange={(event) => setMingFilter(event.currentTarget.value)}
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
@@ -266,10 +252,7 @@ const Example: FC = () => {
       )}
       <ul>
         <li>
-          <Link href="/index-buffers">With CPU Mips</Link>
-        </li>
-        <li>
-          <Link href="/external-textures">External Textures</Link>
+          <Link href="/index-buffers">With GPU Mips</Link>
         </li>
       </ul>
     </ToOverlay>
@@ -277,31 +260,14 @@ const Example: FC = () => {
 };
 
 const Home: NextPage = () => {
-  const [downscale, setDownscale] = useState(64);
-  const spanRef = useRef<HTMLSpanElement>(null);
   return (
     <>
       <Head>
         <title>WebGPU Tests</title>
         <link rel="icon" href="/favicon.svg" />
       </Head>
-      <ToOverlay>
-        <label className="font-bold text-white">
-          Downscale:{" "}
-          <input
-            type="range"
-            min={0}
-            defaultValue={64}
-            max={256}
-            onInput={(event) => {
-              setDownscale(parseInt(event.currentTarget.value, 10));
-            }}
-          />
-          <span ref={spanRef}>{downscale}</span>
-        </label>
-      </ToOverlay>
 
-      <WebGPUApp fullscreen downscale={downscale}>
+      <WebGPUApp fullscreen>
         <Example />
       </WebGPUApp>
     </>
