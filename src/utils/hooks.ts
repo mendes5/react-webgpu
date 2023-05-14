@@ -85,7 +85,7 @@ type AsyncState<T> =
     };
 
 export const useAsyncResource = <T>(
-  generator: () => Promise<T>,
+  generator: (dispose: (callback: () => void) => void) => Promise<T>,
   deps: unknown[]
 ): AsyncState<T> => {
   const [result, setResult] = useState<AsyncState<T>>({ type: "pending" });
@@ -93,7 +93,12 @@ export const useAsyncResource = <T>(
   const isMounted = useIsMounted();
 
   useEffect(() => {
-    generator()
+    const disposerRef = { current: null } as { current: null | (() => void) };
+    generator((calllback) => {
+      disposerRef.current = () => {
+        calllback();
+      };
+    })
       .then((value) => {
         if (isMounted()) {
           setResult({ type: "success", value });
@@ -104,6 +109,10 @@ export const useAsyncResource = <T>(
           setResult({ type: "error", error });
         }
       });
+
+    return () => {
+      disposerRef.current?.();
+    };
   }, deps);
 
   return result;

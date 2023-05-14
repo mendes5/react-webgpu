@@ -10,8 +10,17 @@ import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/helpers/webgpu-app";
 import { ToOverlay } from "~/helpers/overlay";
 import { type Vec3, mat4 } from "~/helpers/math";
-import { numMipLevels } from "~/helpers/mips";
+import { getSourceSize, numMipLevels } from "~/helpers/mips";
 import Link from "next/link";
+import { useAsyncResource } from "~/utils/hooks";
+
+function startPlayingAndWaitForVideo(video: HTMLVideoElement) {
+  return new Promise((resolve, reject) => {
+    video.addEventListener("error", reject);
+    video.requestVideoFrameCallback(resolve);
+    video.play().catch(reject);
+  });
+}
 
 const generateMips = (() => {
   let sampler: GPUSampler;
@@ -138,7 +147,7 @@ function copySourceToTexture(
   device.queue.copyExternalImageToTexture(
     { source, flipY },
     { texture },
-    { width: source.width, height: source.height }
+    getSourceSize(source)
   );
 
   if (texture.mipLevelCount > 1) {
@@ -151,10 +160,11 @@ function createTextureFromSource(
   source: GPUImageCopyExternalImage["source"],
   options: { mips?: boolean; flipY?: boolean } = {}
 ) {
+  const size = getSourceSize(source);
   const texture = device.createTexture({
     format: "rgba8unorm",
-    mipLevelCount: options.mips ? numMipLevels(source.width, source.height) : 1,
-    size: [source.width, source.height],
+    mipLevelCount: options.mips ? numMipLevels(...size) : 1,
+    size,
     usage:
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_DST |
@@ -215,152 +225,149 @@ const Example: FC = () => {
 
   const kMatrixOffset = 0;
 
-  const { texture, update2DCanvas, ctx } = useMemo(() => {
-    const size = 256;
-    const half = size / 2;
+  const canvas = useWebGPUCanvas();
 
-    const ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) throw new Error("Error");
-
-    ctx.canvas.width = size;
-    ctx.canvas.height = size;
-
-    const hsl = (h: number, s: number, l: number) =>
-      `hsl(${(h * 360) | 0}, ${s * 100}%, ${(l * 100) | 0}%)`;
-
-    function update2DCanvas(time: number) {
-      time *= 0.0001;
-      if (!ctx) throw new Error("Error");
-      ctx.clearRect(0, 0, size, size);
-      ctx.save();
-      ctx.translate(half, half);
-      const num = 20;
-      for (let i = 0; i < num; ++i) {
-        ctx.fillStyle = hsl((i / num) * 0.2 + time * 0.1, 1, (i % 2) * 0.5);
-        ctx.fillRect(-half, -half, size, size);
-        ctx.rotate(time * 0.5);
-        ctx.scale(0.85, 0.85);
-        ctx.translate(size / 16, 0);
-      }
-      ctx.restore();
-    }
-
-    const texture = createTextureFromSource(device, ctx.canvas, { mips: true });
-
-    return { texture, update2DCanvas, ctx };
-  }, [device]);
+  const videoState = useAsyncResource(
+    async (dispose) => {
+      const video = document.createElement("video");
+      video.muted = true;
+      video.loop = true;
+      video.preload = "auto";
+      video.src =
+        "https://webgpufundamentals.org/webgpu/resources/videos/Golden_retriever_swimming_the_doggy_paddle-360-no-audio.webm";
+      document.body.appendChild(video);
+      dispose(() => {
+        document.body.removeChild(video);
+      });
+      await new Promise<void>((res) => {
+        canvas.onclick = () => {
+          res();
+          video.play().catch(console.error);
+        };
+      });
+      await startPlayingAndWaitForVideo(video);
+      const texture = createTextureFromSource(device, video, { mips: true });
+      return { video, texture };
+    },
+    [device]
+  );
 
   const { objectInfos } = useMemo(() => {
     const objectInfos = [];
 
-    for (let i = 0; i < 8; ++i) {
-      const sampler = device.createSampler({
-        addressModeU: "repeat",
-        addressModeV: "repeat",
-        magFilter: i & 1 ? "linear" : "nearest",
-        minFilter: i & 2 ? "linear" : "nearest",
-        mipmapFilter: i & 4 ? "linear" : "nearest",
-      });
+    if (videoState.type === "success") {
+      for (let i = 0; i < 8; ++i) {
+        const sampler = device.createSampler({
+          addressModeU: "repeat",
+          addressModeV: "repeat",
+          magFilter: i & 1 ? "linear" : "nearest",
+          minFilter: i & 2 ? "linear" : "nearest",
+          mipmapFilter: i & 4 ? "linear" : "nearest",
+        });
 
-      // create a buffer for the uniform values
-      const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
-      const uniformBuffer = device.createBuffer({
-        label: "uniforms for quad",
-        size: uniformBufferSize,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
+        // create a buffer for the uniform values
+        const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
+        const uniformBuffer = device.createBuffer({
+          label: "uniforms for quad",
+          size: uniformBufferSize,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
 
-      // create a typedarray to hold the values for the uniforms in JavaScript
-      const uniformValues = new Float32Array(uniformBufferSize / 4);
-      const matrix = uniformValues.subarray(kMatrixOffset, 16);
+        // create a typedarray to hold the values for the uniforms in JavaScript
+        const uniformValues = new Float32Array(uniformBufferSize / 4);
+        const matrix = uniformValues.subarray(kMatrixOffset, 16);
 
-      const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: sampler },
-          { binding: 1, resource: texture.createView() },
-          { binding: 2, resource: { buffer: uniformBuffer } },
-        ],
-      });
+        const bindGroup = device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: sampler },
+            { binding: 1, resource: videoState.value.texture.createView() },
+            { binding: 2, resource: { buffer: uniformBuffer } },
+          ],
+        });
 
-      // Save the data we need to render this object.
-      objectInfos.push({
-        bindGroup,
-        matrix,
-        uniformValues,
-        uniformBuffer,
-      });
+        // Save the data we need to render this object.
+        objectInfos.push({
+          bindGroup,
+          matrix,
+          uniformValues,
+          uniformBuffer,
+        });
+      }
     }
 
     return { objectInfos };
-  }, [device, texture, pipeline]);
+  }, [device, videoState, pipeline]);
 
-  const canvas = useWebGPUCanvas();
+  useFrame(() => {
+    if (videoState.type === "success") {
+      copySourceToTexture(
+        device,
+        videoState.value.texture,
+        videoState.value.video
+      );
 
-  useFrame((time) => {
-    update2DCanvas(time);
-    copySourceToTexture(device, texture, ctx.canvas);
+      const renderPassDescriptor: GPURenderPassDescriptor = {
+        label: "our basic canvas renderPass",
+        colorAttachments: [
+          {
+            view: context.getCurrentTexture().createView(),
+            clearValue: [0.3, 0.3, 0.3, 1],
+            loadOp: "clear",
+            storeOp: "store",
+          },
+        ],
+      };
 
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-      label: "our basic canvas renderPass",
-      colorAttachments: [
-        {
-          view: context.getCurrentTexture().createView(),
-          clearValue: [0.3, 0.3, 0.3, 1],
-          loadOp: "clear",
-          storeOp: "store",
-        },
-      ],
-    };
+      immediateRenderPass(device, "triangle encoder", (encoder) => {
+        renderPass(encoder, renderPassDescriptor, (pass) => {
+          const fov = (60 * Math.PI) / 180; // 60 degrees in radians
+          const aspect = canvas.clientWidth / canvas.clientHeight;
+          const zNear = 1;
+          const zFar = 2000;
+          const projectionMatrix = mat4.perspective(fov, aspect, zNear, zFar);
 
-    immediateRenderPass(device, "triangle encoder", (encoder) => {
-      renderPass(encoder, renderPassDescriptor, (pass) => {
-        const fov = (60 * Math.PI) / 180; // 60 degrees in radians
-        const aspect = canvas.clientWidth / canvas.clientHeight;
-        const zNear = 1;
-        const zFar = 2000;
-        const projectionMatrix = mat4.perspective(fov, aspect, zNear, zFar);
+          const cameraPosition: Vec3 = [0, 0, 2];
+          const up: Vec3 = [0, 1, 0];
+          const target: Vec3 = [0, 0, 0];
 
-        const cameraPosition: Vec3 = [0, 0, 2];
-        const up: Vec3 = [0, 1, 0];
-        const target: Vec3 = [0, 0, 0];
+          const cameraMatrix = mat4.lookAt(cameraPosition, target, up);
+          const viewMatrix = mat4.inverse(cameraMatrix);
+          const viewProjectionMatrix = mat4.multiply(
+            projectionMatrix,
+            viewMatrix
+          );
 
-        const cameraMatrix = mat4.lookAt(cameraPosition, target, up);
-        const viewMatrix = mat4.inverse(cameraMatrix);
-        const viewProjectionMatrix = mat4.multiply(
-          projectionMatrix,
-          viewMatrix
-        );
+          pass.setPipeline(pipeline);
 
-        pass.setPipeline(pipeline);
+          objectInfos.forEach(
+            ({ bindGroup, matrix, uniformBuffer, uniformValues }, i) => {
+              const xSpacing = 1.2;
+              const ySpacing = 0.7;
+              const zDepth = 50;
 
-        objectInfos.forEach(
-          ({ bindGroup, matrix, uniformBuffer, uniformValues }, i) => {
-            const xSpacing = 1.2;
-            const ySpacing = 0.7;
-            const zDepth = 50;
+              const x = (i % 4) - 1.5;
+              const y = i < 4 ? 1 : -1;
 
-            const x = (i % 4) - 1.5;
-            const y = i < 4 ? 1 : -1;
+              mat4.translate(
+                viewProjectionMatrix,
+                [x * xSpacing, y * ySpacing, -zDepth * 0.5],
+                matrix
+              );
+              mat4.rotateX(matrix, 0.5 * Math.PI, matrix);
+              mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
+              mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
 
-            mat4.translate(
-              viewProjectionMatrix,
-              [x * xSpacing, y * ySpacing, -zDepth * 0.5],
-              matrix
-            );
-            mat4.rotateX(matrix, 0.5 * Math.PI, matrix);
-            mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
-            mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
+              // copy the values from JavaScript to the GPU
+              device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
-            // copy the values from JavaScript to the GPU
-            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
-
-            pass.setBindGroup(0, bindGroup);
-            pass.draw(6); // call our vertex shader 6 times
-          }
-        );
+              pass.setBindGroup(0, bindGroup);
+              pass.draw(6); // call our vertex shader 6 times
+            }
+          );
+        });
       });
-    });
+    }
   });
 
   return (

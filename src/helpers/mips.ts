@@ -96,3 +96,14 @@ export async function loadImageBitmap(url: string) {
   const blob = await res.blob();
   return await createImageBitmap(blob, { colorSpaceConversion: "none" });
 }
+
+export function getSourceSize(source: GPUImageCopyExternalImage["source"]) {
+  if (source instanceof HTMLVideoElement) {
+    return [
+      source.videoWidth || source.width,
+      source.videoHeight || source.height,
+    ];
+  }
+
+  return [source.width, source.height];
+}
