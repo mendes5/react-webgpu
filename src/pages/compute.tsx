@@ -38,6 +38,8 @@ const Example: FC = () => {
       label: "work buffer",
       size: input.byteLength,
       usage:
+        //  Here it is! since we used STORAGE
+        // it means the GPU can write to this buffer
         GPUBufferUsage.STORAGE |
         GPUBufferUsage.COPY_SRC |
         GPUBufferUsage.COPY_DST,
