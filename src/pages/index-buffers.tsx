@@ -11,7 +11,81 @@ import { WebGPUApp } from "~/helpers/webgpu-app";
 import { ToOverlay } from "~/helpers/overlay";
 import { rand, range } from "~/utils/other";
 import { useConsoleHook } from "~/webgpu/console-hook";
-import { createCircleVertices } from "~/helpers/geometry";
+import { useVersion } from "~/utils/hooks";
+import Link from "next/link";
+
+export function createCircleVerticesIndexed({
+  radius = 1,
+  numSubdivisions = 24,
+  innerRadius = 0,
+  startAngle = 0,
+  endAngle = Math.PI * 2,
+} = {}) {
+  // 2 triangles per subdivision, 3 verts per tri, 2 values (xy) each.
+  const numVertices = numSubdivisions * 3 * 2;
+  const vertexData = new Float32Array(numVertices * (2 + 3));
+
+  let offset = 0;
+  const addVertex = (x: number, y: number, r: number, g: number, b: number) => {
+    vertexData[offset++] = x;
+    vertexData[offset++] = y;
+    vertexData[offset++] = r;
+    vertexData[offset++] = g;
+    vertexData[offset++] = b;
+  };
+
+  const innerColor = [0.1, 0.1, 0.1] as const;
+  const outerColor = [1, 1, 1] as const;
+
+  // 2 vertices per subdivision
+  //
+  // 0--1 4
+  // | / /|
+  // |/ / |
+  // 2 3--5
+  // 2 vertices per subdivision
+  //
+  // 0  2  4  6  8 ...
+  //
+  // 1  3  5  7  9 ...
+  for (let i = 0; i <= numSubdivisions; ++i) {
+    const angle =
+      startAngle + ((i + 0) * (endAngle - startAngle)) / numSubdivisions;
+
+    const c1 = Math.cos(angle);
+    const s1 = Math.sin(angle);
+
+    addVertex(c1 * radius, s1 * radius, ...outerColor);
+    addVertex(c1 * innerRadius, s1 * innerRadius, ...innerColor);
+  }
+
+  const indexData = new Uint32Array(numSubdivisions * 6);
+  let ndx = 0;
+
+  // 0---2---4---...
+  // | //| //|
+  // |// |// |//
+  // 1---3-- 5---...
+  for (let i = 0; i < numSubdivisions; ++i) {
+    const ndxOffset = i * 2;
+
+    // first triangle
+    indexData[ndx++] = ndxOffset;
+    indexData[ndx++] = ndxOffset + 1;
+    indexData[ndx++] = ndxOffset + 2;
+
+    // second triangle
+    indexData[ndx++] = ndxOffset + 2;
+    indexData[ndx++] = ndxOffset + 1;
+    indexData[ndx++] = ndxOffset + 3;
+  }
+
+  return {
+    vertexData,
+    indexData,
+    numVertices,
+  };
+}
 
 /**
  * Differences betwen uniform buffers and storage buffers
@@ -37,10 +111,6 @@ const Example: FC = () => {
           scale: vec2f,
         };
 
-        struct Vertex {
-          position: vec2f,
-        };
-
         struct VSOutput {
           @builtin(position) position: vec4f,
           @location(0) color: vec4f,
@@ -48,10 +118,17 @@ const Example: FC = () => {
 
         @group(0) @binding(0) var<storage, read> ourStructs: array<OurStruct>;
         @group(0) @binding(1) var<storage, read> otherStructs: array<OtherStruct>;
-        @group(0) @binding(2) var<storage, read> pos: array<Vertex>;
+
+        struct Vertex {
+          // This zero links with the first element of the buffers
+          // array on the useVersion below
+          @location(0) position: vec2f,
+          @location(1) color: vec3f,
+        };
+
 
         @vertex fn vsMain(
-          @builtin(vertex_index) vertexIndex: u32,
+          vert: Vertex,
           @builtin(instance_index) instanceIndex: u32
         ) ->  VSOutput  {
           let otherStruct = otherStructs[instanceIndex];
@@ -59,8 +136,8 @@ const Example: FC = () => {
 
           var vsOut: VSOutput;
           vsOut.position = vec4f(
-            pos[vertexIndex].position * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
-          vsOut.color = ourStruct.color;
+            vert.position * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
+          vsOut.color = ourStruct.color * vec4f(vert.color, 1);
 
           return vsOut;
         }
@@ -72,10 +149,20 @@ const Example: FC = () => {
     "rgb  triangle shader"
   );
 
+  const buffers = useVersion(() => [
+    {
+      arrayStride: (2 + 3) * 4, // (2 + 3) floats, 4 bytes each
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: "float32x2" }, // position
+        { shaderLocation: 1, offset: 8, format: "float32x3" }, // color
+      ] as const,
+    },
+  ]);
+
   /**
    * Pipeline will be recreated if the shader changes
    */
-  const pipeline = usePipeline(shader, "Main render pipeline");
+  const pipeline = usePipeline(shader, "Main render pipeline", buffers);
 
   const device = useGPUDevice();
   const context = useWebGPUContext();
@@ -98,11 +185,13 @@ const Example: FC = () => {
   const {
     objectInfos,
     storageValues,
+    indexBuffer,
     changingStorageBuffer,
     bindGroup,
     staticStorageValues,
     numVertices,
     staticStorageBuffer,
+    vertexBuffer,
   } = useMemo(() => {
     const objectInfos = [];
 
@@ -144,18 +233,25 @@ const Example: FC = () => {
 
     // Vertex buffer setup
 
-    const { vertexData, numVertices } = createCircleVertices({
-      radius: 0.5,
-      innerRadius: 0.25,
+    const { vertexData, indexData, numVertices } = createCircleVerticesIndexed({
+      radius: 1,
+      innerRadius: 0.5,
+      numSubdivisions: 360,
     });
 
-    const vertexStorageBuffer = device.createBuffer({
+    const vertexBuffer = device.createBuffer({
       label: "storage buffer vertices",
       size: vertexData.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
+    device.queue.writeBuffer(vertexBuffer, 0, vertexData);
 
-    device.queue.writeBuffer(vertexStorageBuffer, 0, vertexData);
+    const indexBuffer = device.createBuffer({
+      label: "index buffer",
+      size: indexData.byteLength,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(indexBuffer, 0, indexData);
 
     const bindGroup = device.createBindGroup({
       label: "bind group for objects",
@@ -163,11 +259,12 @@ const Example: FC = () => {
       entries: [
         { binding: 0, resource: { buffer: staticStorageBuffer } },
         { binding: 1, resource: { buffer: changingStorageBuffer } },
-        { binding: 2, resource: { buffer: vertexStorageBuffer } },
       ],
     });
 
     return {
+      indexBuffer,
+      vertexBuffer,
       numVertices,
       staticStorageValues,
       objectInfos,
@@ -220,19 +317,19 @@ const Example: FC = () => {
     immediateRenderPass(device, "triangle encoder", (encoder) => {
       renderPass(encoder, renderPassDescriptor, (pass) => {
         pass.setPipeline(pipeline);
+        pass.setVertexBuffer(0, vertexBuffer);
+        pass.setIndexBuffer(indexBuffer, "uint32");
 
         const aspect = canvas.width / canvas.height;
 
-        // set the scales for each object
         objectInfos.forEach(({ scale }, ndx) => {
           const offset = ndx * (changingUnitSize / 4);
-          storageValues.set([scale / aspect, scale], offset + kScaleOffset); // set the scale
+          storageValues.set([scale / aspect, scale], offset + kScaleOffset);
         });
-        // upload all scales at once
         device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
 
         pass.setBindGroup(0, bindGroup);
-        pass.draw(numVertices, objectCountRef.current); // call our vertex shader 3 times for each instance
+        pass.drawIndexed(numVertices, objectCountRef.current);
       });
     });
   });
@@ -264,6 +361,11 @@ const Example: FC = () => {
         />
         <span ref={spanRef}>{kNumObjects}</span>
       </label>
+      <ul>
+        <li>
+          <Link href="/vertex-buffers-separate">Separate buffers</Link>
+        </li>
+      </ul>
     </ToOverlay>
   );
 };

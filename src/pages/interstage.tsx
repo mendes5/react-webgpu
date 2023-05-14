@@ -1,8 +1,6 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { api } from "~/utils/api";
-
 import { useState, type FC } from "react";
 import { useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
@@ -245,14 +243,11 @@ const Example: FC = () => {
 };
 
 const Home: NextPage = () => {
-  const version = api.meta.version.useQuery();
-
   return (
     <>
       <Head>
         <title>WebGPU Tests</title>
         <link rel="icon" href="/favicon.svg" />
-        <meta rel="app-version" content={version.data} />
       </Head>
       <WebGPUApp fullscreen>
         <Example />

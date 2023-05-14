@@ -1,4 +1,5 @@
 import {
+  useMemo,
   type ForwardedRef,
   type MutableRefObject,
   type RefCallback,
@@ -30,4 +31,17 @@ export const useEffectInvalidator = () => {
   const { count, increment } = useCounter(0);
 
   return [count, increment] as const;
+};
+
+export type Versioned<T> = {
+  version: number;
+  value: T;
+};
+
+export const useVersion = <T>(
+  generator: () => T,
+  version = 0
+): Versioned<T> => {
+  // eslint-disable-next-line
+  return useMemo(() => ({ value: generator(), version }), [version]);
 };

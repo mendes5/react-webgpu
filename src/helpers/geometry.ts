@@ -9,13 +9,19 @@ export function createCircleVertices({
 } = {}) {
   // 2 triangles per subdivision, 3 verts per tri, 2 values (xy) each.
   const numVertices = numSubdivisions * 3 * 2;
-  const vertexData = new Float32Array(numSubdivisions * 2 * 3 * 2);
+  const vertexData = new Float32Array(numVertices * (2 + 3));
 
   let offset = 0;
-  const addVertex = (x: number, y: number) => {
+  const addVertex = (x: number, y: number, r: number, g: number, b: number) => {
     vertexData[offset++] = x;
     vertexData[offset++] = y;
+    vertexData[offset++] = r;
+    vertexData[offset++] = g;
+    vertexData[offset++] = b;
   };
+
+  const innerColor = [0.1, 0.1, 0.1] as const;
+  const outerColor = [1, 1, 1] as const;
 
   // 2 vertices per subdivision
   //
@@ -35,14 +41,14 @@ export function createCircleVertices({
     const s2 = Math.sin(angle2);
 
     // first triangle
-    addVertex(c1 * radius, s1 * radius);
-    addVertex(c2 * radius, s2 * radius);
-    addVertex(c1 * innerRadius, s1 * innerRadius);
+    addVertex(c1 * radius, s1 * radius, ...outerColor);
+    addVertex(c2 * radius, s2 * radius, ...outerColor);
+    addVertex(c1 * innerRadius, s1 * innerRadius, ...innerColor);
 
     // second triangle
-    addVertex(c1 * innerRadius, s1 * innerRadius);
-    addVertex(c2 * radius, s2 * radius);
-    addVertex(c2 * innerRadius, s2 * innerRadius);
+    addVertex(c1 * innerRadius, s1 * innerRadius, ...innerColor);
+    addVertex(c2 * radius, s2 * radius, ...outerColor);
+    addVertex(c2 * innerRadius, s2 * innerRadius, ...innerColor);
   }
 
   return {

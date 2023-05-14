@@ -4,6 +4,7 @@ import stringHash from "string-hash";
 import { createShaderModule } from "./calls";
 import { usePresentationFormat } from "./canvas";
 import { lResource } from "./logger";
+import { Versioned } from "~/utils/hooks";
 
 const SHADER_CACHE: Map<number, GPUShaderModule> = new Map();
 
@@ -35,7 +36,11 @@ const RENDER_PIPELINE_CACHE: Map<GPUShaderModule, GPURenderPipeline> =
 const COMPUTE_PIPELINE_CACHE: Map<GPUShaderModule, GPUComputePipeline> =
   new Map();
 
-export const usePipeline = (shader: GPUShaderModule, label?: string) => {
+export const usePipeline = (
+  shader: GPUShaderModule,
+  label?: string,
+  buffers?: Versioned<GPUVertexBufferLayout[]>
+) => {
   const device = useGPUDevice();
   const format = usePresentationFormat();
 
@@ -52,6 +57,7 @@ export const usePipeline = (shader: GPUShaderModule, label?: string) => {
       layout: "auto",
       vertex: {
         module: shader,
+        buffers: buffers ? buffers.value : undefined,
         entryPoint: "vsMain",
       },
       fragment: {
@@ -71,7 +77,8 @@ export const usePipeline = (shader: GPUShaderModule, label?: string) => {
     });
 
     return pipeline;
-  }, [device, label, shader, format]);
+    // eslint-disable-next-line
+  }, [device, label, shader, format, buffers?.version]);
 };
 
 export const useComputePipeline = (

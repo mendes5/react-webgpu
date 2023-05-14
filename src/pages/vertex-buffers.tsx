@@ -12,6 +12,8 @@ import { ToOverlay } from "~/helpers/overlay";
 import { rand, range } from "~/utils/other";
 import { useConsoleHook } from "~/webgpu/console-hook";
 import { createCircleVertices } from "~/helpers/geometry";
+import { useVersion } from "~/utils/hooks";
+import Link from "next/link";
 
 /**
  * Differences betwen uniform buffers and storage buffers
@@ -37,10 +39,6 @@ const Example: FC = () => {
           scale: vec2f,
         };
 
-        struct Vertex {
-          position: vec2f,
-        };
-
         struct VSOutput {
           @builtin(position) position: vec4f,
           @location(0) color: vec4f,
@@ -48,10 +46,17 @@ const Example: FC = () => {
 
         @group(0) @binding(0) var<storage, read> ourStructs: array<OurStruct>;
         @group(0) @binding(1) var<storage, read> otherStructs: array<OtherStruct>;
-        @group(0) @binding(2) var<storage, read> pos: array<Vertex>;
+
+        struct Vertex {
+          // This zero links with the first element of the buffers
+          // array on the useVersion below
+          @location(0) position: vec2f,
+          @location(1) color: vec3f,
+        };
+
 
         @vertex fn vsMain(
-          @builtin(vertex_index) vertexIndex: u32,
+          vert: Vertex,
           @builtin(instance_index) instanceIndex: u32
         ) ->  VSOutput  {
           let otherStruct = otherStructs[instanceIndex];
@@ -59,8 +64,8 @@ const Example: FC = () => {
 
           var vsOut: VSOutput;
           vsOut.position = vec4f(
-            pos[vertexIndex].position * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
-          vsOut.color = ourStruct.color;
+            vert.position * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
+          vsOut.color = ourStruct.color * vec4f(vert.color, 1);
 
           return vsOut;
         }
@@ -72,10 +77,20 @@ const Example: FC = () => {
     "rgb  triangle shader"
   );
 
+  const buffers = useVersion(() => [
+    {
+      arrayStride: (2 + 3) * 4, // (2 + 3) floats, 4 bytes each
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: "float32x2" }, // position
+        { shaderLocation: 1, offset: 8, format: "float32x3" }, // color
+      ] as const,
+    },
+  ]);
+
   /**
    * Pipeline will be recreated if the shader changes
    */
-  const pipeline = usePipeline(shader, "Main render pipeline");
+  const pipeline = usePipeline(shader, "Main render pipeline", buffers);
 
   const device = useGPUDevice();
   const context = useWebGPUContext();
@@ -103,6 +118,7 @@ const Example: FC = () => {
     staticStorageValues,
     numVertices,
     staticStorageBuffer,
+    vertexBuffer,
   } = useMemo(() => {
     const objectInfos = [];
 
@@ -145,17 +161,18 @@ const Example: FC = () => {
     // Vertex buffer setup
 
     const { vertexData, numVertices } = createCircleVertices({
-      radius: 0.5,
-      innerRadius: 0.25,
+      radius: 0,
+      innerRadius: 1,
+      numSubdivisions: 360,
     });
 
-    const vertexStorageBuffer = device.createBuffer({
+    const vertexBuffer = device.createBuffer({
       label: "storage buffer vertices",
       size: vertexData.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
-    device.queue.writeBuffer(vertexStorageBuffer, 0, vertexData);
+    device.queue.writeBuffer(vertexBuffer, 0, vertexData);
 
     const bindGroup = device.createBindGroup({
       label: "bind group for objects",
@@ -163,11 +180,11 @@ const Example: FC = () => {
       entries: [
         { binding: 0, resource: { buffer: staticStorageBuffer } },
         { binding: 1, resource: { buffer: changingStorageBuffer } },
-        { binding: 2, resource: { buffer: vertexStorageBuffer } },
       ],
     });
 
     return {
+      vertexBuffer,
       numVertices,
       staticStorageValues,
       objectInfos,
@@ -220,19 +237,18 @@ const Example: FC = () => {
     immediateRenderPass(device, "triangle encoder", (encoder) => {
       renderPass(encoder, renderPassDescriptor, (pass) => {
         pass.setPipeline(pipeline);
+        pass.setVertexBuffer(0, vertexBuffer);
 
         const aspect = canvas.width / canvas.height;
 
-        // set the scales for each object
         objectInfos.forEach(({ scale }, ndx) => {
           const offset = ndx * (changingUnitSize / 4);
-          storageValues.set([scale / aspect, scale], offset + kScaleOffset); // set the scale
+          storageValues.set([scale / aspect, scale], offset + kScaleOffset);
         });
-        // upload all scales at once
         device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
 
         pass.setBindGroup(0, bindGroup);
-        pass.draw(numVertices, objectCountRef.current); // call our vertex shader 3 times for each instance
+        pass.draw(numVertices, objectCountRef.current);
       });
     });
   });
@@ -264,6 +280,11 @@ const Example: FC = () => {
         />
         <span ref={spanRef}>{kNumObjects}</span>
       </label>
+      <ul>
+        <li>
+          <Link href="/vertex-buffers-separate">Separate buffers</Link>
+        </li>
+      </ul>
     </ToOverlay>
   );
 };
