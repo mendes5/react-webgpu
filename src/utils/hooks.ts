@@ -5,6 +5,7 @@ import {
   type RefCallback,
 } from "react";
 import { useEffect, useRef } from "react";
+import stringHash from "string-hash";
 import { useCounter } from "usehooks-ts";
 
 type CompatibleRef<T> = MutableRefObject<T> | RefCallback<T> | ForwardedRef<T>;
@@ -44,4 +45,27 @@ export const useVersion = <T>(
 ): Versioned<T> => {
   // eslint-disable-next-line
   return useMemo(() => ({ value: generator(), version }), [version]);
+};
+
+const CACHE = new Map<number, unknown>();
+
+export const useHashedCache = <T>(
+  prefix: string,
+  generator: () => T,
+  deps: unknown[],
+  hashes: (string | number | boolean | null | undefined)[]
+): T => {
+  return useMemo(() => {
+    const key = [prefix, ...hashes].join(",");
+    const hash = stringHash(key);
+
+    if (CACHE.has(hash)) {
+      return CACHE.get(hash) as T;
+    } else {
+      const value = generator();
+      CACHE.set(hash, value);
+      return value;
+    }
+    // eslint-disable-next-line
+  }, [prefix, ...deps, ...hashes]);
 };

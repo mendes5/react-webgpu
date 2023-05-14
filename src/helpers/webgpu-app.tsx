@@ -10,6 +10,7 @@ type Props = {
   fullscreen?: boolean;
   width?: number;
   height?: number;
+  downscale?: number;
 };
 
 export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
@@ -18,6 +19,7 @@ export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
   fullscreen,
   width,
   height,
+  downscale,
 }) => {
   return (
     <Inspector name="root">
@@ -25,6 +27,7 @@ export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
         <WebGPUDevice fallback={<h1>Failed to create GPUDevice</h1>}>
           {canvas ? (
             <WebGPUCanvas
+              downscale={downscale}
               fullscreen={fullscreen}
               fallback={<h1>Failed to create Canvas</h1>}
               width={width}

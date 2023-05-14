@@ -60,12 +60,13 @@ type Props = {
   fullscreen?: boolean;
   children?: ReactNode;
   fallback: ReactNode;
+  downscale?: number;
 };
 
 export const WebGPUCanvas = forwardRef<HTMLCanvasElement, Props>(
-  ({ children, width, height, fullscreen = false }, ref) => {
+  ({ children, width, height, fullscreen = false, downscale }, ref) => {
     const ownRef = useRef<HTMLCanvasElement>(null);
-    const autoSize = useAutoSize();
+    const autoSize = useAutoSize(downscale);
     const inner = useCombinedRefs<HTMLCanvasElement>(ref, ownRef, autoSize);
     const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
     const [context, setContext] = useState<GPUCanvasContext | null | Error>(
