@@ -13,6 +13,7 @@ import { useInspector } from "./debug";
 import { useGPUDevice } from "./gpu-device";
 import { configureContextPresentation, getPresentationFormat } from "./calls";
 import { useAutoSize } from "./auto-size";
+import styles from "./canvas.module.css";
 
 const WebGPUCanvasContext = createContext<HTMLCanvasElement | null>(null);
 const WebGPUContext = createContext<GPUCanvasContext | null>(null);
@@ -116,7 +117,7 @@ export const WebGPUCanvas = forwardRef<HTMLCanvasElement, Props>(
     return (
       <>
         <canvas
-          className={className}
+          className={`${className} ${downscale ? styles.downscale ?? "" : ""}`}
           width={size.width}
           height={size.height}
           ref={inner}

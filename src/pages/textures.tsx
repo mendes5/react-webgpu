@@ -10,6 +10,7 @@ import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/helpers/webgpu-app";
 import { ToOverlay } from "~/helpers/overlay";
 import { useHashedCache } from "~/utils/hooks";
+import Link from "next/link";
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",
@@ -263,6 +264,11 @@ const Example: FC = () => {
           </select>
         </>
       )}
+      <ul>
+        <li>
+          <Link href="/index-buffers">With CPU Mips</Link>
+        </li>
+      </ul>
     </ToOverlay>
   );
 };
