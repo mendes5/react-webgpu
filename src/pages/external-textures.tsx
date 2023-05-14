@@ -11,12 +11,7 @@ import { WebGPUApp } from "~/helpers/webgpu-app";
 import { ToOverlay } from "~/helpers/overlay";
 import { useAsyncResource, useHashedCache } from "~/utils/hooks";
 import Link from "next/link";
-
-async function loadImageBitmap(url: string) {
-  const res = await fetch(url);
-  const blob = await res.blob();
-  return await createImageBitmap(blob, { colorSpaceConversion: "none" });
-}
+import { loadImageBitmap } from "~/helpers/mips";
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",

@@ -85,3 +85,14 @@ export type MipTexture = {
   width: number;
   height: number;
 };
+
+export const numMipLevels = (...sizes: number[]) => {
+  const maxSize = Math.max(...sizes);
+  return (1 + Math.log2(maxSize)) | 0;
+};
+
+export async function loadImageBitmap(url: string) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return await createImageBitmap(blob, { colorSpaceConversion: "none" });
+}
