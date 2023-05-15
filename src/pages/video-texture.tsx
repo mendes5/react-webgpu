@@ -1,18 +1,16 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useMemo, type FC } from "react";
+import { type FC } from "react";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { usePipeline, useShaderModule } from "~/webgpu/shader";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
-import { ToOverlay } from "~/helpers/overlay";
-import { type Vec3, mat4 } from "~/helpers/math";
-import { getSourceSize, numMipLevels } from "~/helpers/mips";
-import Link from "next/link";
-import { useAsyncResource } from "~/utils/hooks";
+import { WebGPUApp } from "~/utils/webgpu-app";
+import { type Vec3, mat4 } from "~/utils/math";
+import { getSourceSize, numMipLevels } from "~/utils/mips";
+import { useAsyncResource, useMemoBag } from "~/utils/hooks";
 
 function startPlayingAndWaitForVideo(video: HTMLVideoElement) {
   return new Promise((resolve, reject) => {
@@ -229,6 +227,8 @@ const Example: FC = () => {
 
   const videoState = useAsyncResource(
     async (dispose) => {
+      if (!device) return Promise.reject();
+
       const video = document.createElement("video");
       video.muted = true;
       video.loop = true;
@@ -252,54 +252,60 @@ const Example: FC = () => {
     [device]
   );
 
-  const { objectInfos } = useMemo(() => {
-    const objectInfos = [];
+  const { objectInfos } =
+    useMemoBag(
+      { device, pipeline },
+      ({ device, pipeline }) => {
+        const objectInfos = [];
 
-    if (videoState.type === "success") {
-      for (let i = 0; i < 8; ++i) {
-        const sampler = device.createSampler({
-          addressModeU: "repeat",
-          addressModeV: "repeat",
-          magFilter: i & 1 ? "linear" : "nearest",
-          minFilter: i & 2 ? "linear" : "nearest",
-          mipmapFilter: i & 4 ? "linear" : "nearest",
-        });
+        if (videoState.type === "success") {
+          for (let i = 0; i < 8; ++i) {
+            const sampler = device.createSampler({
+              addressModeU: "repeat",
+              addressModeV: "repeat",
+              magFilter: i & 1 ? "linear" : "nearest",
+              minFilter: i & 2 ? "linear" : "nearest",
+              mipmapFilter: i & 4 ? "linear" : "nearest",
+            });
 
-        // create a buffer for the uniform values
-        const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
-        const uniformBuffer = device.createBuffer({
-          label: "uniforms for quad",
-          size: uniformBufferSize,
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+            // create a buffer for the uniform values
+            const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
+            const uniformBuffer = device.createBuffer({
+              label: "uniforms for quad",
+              size: uniformBufferSize,
+              usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
 
-        // create a typedarray to hold the values for the uniforms in JavaScript
-        const uniformValues = new Float32Array(uniformBufferSize / 4);
-        const matrix = uniformValues.subarray(kMatrixOffset, 16);
+            // create a typedarray to hold the values for the uniforms in JavaScript
+            const uniformValues = new Float32Array(uniformBufferSize / 4);
+            const matrix = uniformValues.subarray(kMatrixOffset, 16);
 
-        const bindGroup = device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: sampler },
-            { binding: 1, resource: videoState.value.texture.createView() },
-            { binding: 2, resource: { buffer: uniformBuffer } },
-          ],
-        });
+            const bindGroup = device.createBindGroup({
+              layout: pipeline.getBindGroupLayout(0),
+              entries: [
+                { binding: 0, resource: sampler },
+                { binding: 1, resource: videoState.value.texture.createView() },
+                { binding: 2, resource: { buffer: uniformBuffer } },
+              ],
+            });
 
-        // Save the data we need to render this object.
-        objectInfos.push({
-          bindGroup,
-          matrix,
-          uniformValues,
-          uniformBuffer,
-        });
-      }
-    }
+            // Save the data we need to render this object.
+            objectInfos.push({
+              bindGroup,
+              matrix,
+              uniformValues,
+              uniformBuffer,
+            });
+          }
+        }
 
-    return { objectInfos };
-  }, [device, videoState, pipeline]);
+        return { objectInfos };
+      },
+      [device, videoState, pipeline]
+    ) ?? {};
 
   useFrame(() => {
+    if (!device || !pipeline || !objectInfos) return null;
     if (videoState.type === "success") {
       copySourceToTexture(
         device,
@@ -370,15 +376,7 @@ const Example: FC = () => {
     }
   });
 
-  return (
-    <ToOverlay>
-      <ul>
-        <li>
-          <Link href="/video-texture">Canvas Texture</Link>
-        </li>
-      </ul>
-    </ToOverlay>
-  );
+  return null;
 };
 
 const Home: NextPage = () => {

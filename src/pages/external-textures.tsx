@@ -1,17 +1,16 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useMemo, type FC, useState, useId, useRef } from "react";
+import { type FC, useState } from "react";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import { usePipeline, useShaderModule } from "~/webgpu/shader";
+import { usePipeline, useSampler, useShaderModule } from "~/webgpu/shader";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
-import { ToOverlay } from "~/helpers/overlay";
-import { useAsyncResource, useHashedCache } from "~/utils/hooks";
-import Link from "next/link";
-import { loadImageBitmap } from "~/helpers/mips";
+import { WebGPUApp } from "~/utils/webgpu-app";
+import { ToOverlay } from "~/utils/overlay";
+import { useAsyncResource, useMemoBag } from "~/utils/hooks";
+import { loadImageBitmap } from "~/utils/mips";
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",
@@ -79,6 +78,8 @@ const Example: FC = () => {
   const [minFilter, setMingFilter] = useState<string>(FilterMode.nearest);
 
   const textureState = useAsyncResource(async () => {
+    if (!device) return Promise.reject();
+
     const url = "/resources/f-texture.png";
     const source = await loadImageBitmap(url);
 
@@ -104,62 +105,63 @@ const Example: FC = () => {
   }, [device]);
 
   const { uniformBuffer, uniformValues, kScaleOffset, kOffsetOffset } =
-    useMemo(() => {
-      const uniformBufferSize =
-        2 * 4 + // scale is 2 32bit floats (4bytes each)
-        2 * 4; // offset is 2 32bit floats (4bytes each)
-      const uniformBuffer = device.createBuffer({
-        label: "uniforms for quad",
-        size: uniformBufferSize,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
+    useMemoBag(
+      { device },
+      ({ device }) => {
+        const uniformBufferSize =
+          2 * 4 + // scale is 2 32bit floats (4bytes each)
+          2 * 4; // offset is 2 32bit floats (4bytes each)
+        const uniformBuffer = device.createBuffer({
+          label: "uniforms for quad",
+          size: uniformBufferSize,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
 
-      // create a typedarray to hold the values for the uniforms in JavaScript
-      const uniformValues = new Float32Array(uniformBufferSize / 4);
+        // create a typedarray to hold the values for the uniforms in JavaScript
+        const uniformValues = new Float32Array(uniformBufferSize / 4);
 
-      // offsets to the various uniform values in float32 indices
-      const kScaleOffset = 0;
-      const kOffsetOffset = 2;
+        // offsets to the various uniform values in float32 indices
+        const kScaleOffset = 0;
+        const kOffsetOffset = 2;
 
-      return { uniformBuffer, uniformValues, kScaleOffset, kOffsetOffset };
-    }, [device]);
+        return { uniformBuffer, uniformValues, kScaleOffset, kOffsetOffset };
+      },
+      [device]
+    ) ?? {};
 
-  const { sampler } = useHashedCache(
-    useId(),
-    () => {
-      const sampler = device.createSampler({
-        addressModeU: modeU as GPUAddressMode,
-        addressModeV: modeV as GPUAddressMode,
-        magFilter: magFilter as GPUFilterMode,
-        minFilter: minFilter as GPUFilterMode,
-      });
+  const sampler = useSampler({
+    addressModeU: modeU as GPUAddressMode,
+    addressModeV: modeV as GPUAddressMode,
+    magFilter: magFilter as GPUFilterMode,
+    minFilter: minFilter as GPUFilterMode,
+  });
 
-      return { sampler };
-    },
-    [device],
-    [modeU, modeV, magFilter, minFilter]
-  );
+  const { bindGroup } =
+    useMemoBag(
+      { device, pipeline, sampler, uniformBuffer },
+      ({ device, pipeline, sampler, uniformBuffer }) => {
+        if (textureState.type === "success") {
+          const bindGroup = device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: sampler },
+              { binding: 1, resource: textureState.value.texture.createView() },
+              { binding: 2, resource: { buffer: uniformBuffer } },
+            ],
+          });
 
-  const { bindGroup } = useMemo(() => {
-    if (textureState.type === "success") {
-      const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: sampler },
-          { binding: 1, resource: textureState.value.texture.createView() },
-          { binding: 2, resource: { buffer: uniformBuffer } },
-        ],
-      });
-
-      return { bindGroup };
-    } else {
-      return { bindGroup: null };
-    }
-  }, [sampler, device, pipeline, uniformBuffer, textureState]);
+          return { bindGroup };
+        } else {
+          return { bindGroup: null };
+        }
+      },
+      [sampler, uniformBuffer, textureState]
+    ) ?? {};
 
   const canvas = useWebGPUCanvas();
 
   useFrame((time) => {
+    if (!device || !pipeline || !uniformValues || !uniformBuffer) return;
     time *= 0.001;
 
     const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -245,11 +247,6 @@ const Example: FC = () => {
           </select>
         </>
       )}
-      <ul>
-        <li>
-          <Link href="/index-buffers">With GPU Mips</Link>
-        </li>
-      </ul>
     </ToOverlay>
   );
 };

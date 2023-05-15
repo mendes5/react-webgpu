@@ -3,7 +3,8 @@ import { WebGPUCanvas } from "~/webgpu/canvas";
 import { Inspector } from "~/webgpu/debug";
 import { WebGPUDevice } from "~/webgpu/gpu-device";
 import { RenderController } from "~/webgpu/per-frame";
-import { Overlay } from "./overlay";
+import { Overlay, ToOverlayEnd } from "./overlay";
+import { Menu } from "~/components/menu";
 
 type Props = {
   canvas?: boolean;
@@ -24,7 +25,10 @@ export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
   return (
     <Inspector name="root">
       <RenderController enabled>
-        <WebGPUDevice fallback={<h1>Failed to create GPUDevice</h1>}>
+        <WebGPUDevice
+          loading={<h1>Loading</h1>}
+          fallback={<h1>Failed to create GPUDevice</h1>}
+        >
           {canvas ? (
             <WebGPUCanvas
               downscale={downscale}
@@ -41,6 +45,9 @@ export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
         </WebGPUDevice>
       </RenderController>
       <Overlay />
+      <ToOverlayEnd>
+        <Menu />
+      </ToOverlayEnd>
     </Inspector>
   );
 };

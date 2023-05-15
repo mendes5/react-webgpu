@@ -1,108 +1,185 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useGPUDevice } from "./gpu-device";
 import stringHash from "string-hash";
-import { createShaderModule } from "./calls";
 import { usePresentationFormat } from "./canvas";
-import { lResource } from "./logger";
-import { Versioned } from "~/utils/hooks";
+import { type V } from "~/utils/hooks";
+import { type H, hashed, shortId } from "~/utils/other";
+import { log } from "./logger";
 
-const SHADER_CACHE: Map<number, GPUShaderModule> = new Map();
+const SAMPLER_CACHE: Map<GPUDevice, Map<string, H<GPUSampler>>> = new Map();
 
-export const useShaderModule = (code: string, label?: string) => {
+const SHADER_CACHE: Map<GPUDevice, Map<number, H<GPUShaderModule>>> = new Map();
+
+const RENDER_PIPELINE_CACHE: Map<
+  GPUDevice,
+  Map<string, H<GPURenderPipeline>>
+> = new Map();
+
+const COMPUTE_PIPELINE_CACHE: Map<
+  GPUDevice,
+  Map<string, H<GPUComputePipeline>>
+> = new Map();
+
+if (typeof window !== "undefined")
+  Object.assign(window, {
+    CACHES: {
+      SAMPLER_CACHE,
+      SHADER_CACHE,
+      RENDER_PIPELINE_CACHE,
+      COMPUTE_PIPELINE_CACHE,
+    },
+  });
+
+export const useDeviceCache = <K, V>(
+  key: K,
+  create: (device: GPUDevice) => V,
+  globalCache: Map<GPUDevice, Map<K, V>>
+): V | null => {
   const device = useGPUDevice();
 
+  const createRef = useRef(create);
+  createRef.current = create;
+
   return useMemo(() => {
-    const hash = stringHash(code);
+    if (device) {
+      const cache = upsertDeviceCache(device, globalCache);
+      const fromCache = cache.get(key);
 
-    const fromCache = SHADER_CACHE.get(hash);
+      if (fromCache) return fromCache;
 
-    if (fromCache) {
-      return fromCache;
+      const newItem = createRef.current(device);
+
+      cache.set(key, newItem);
+
+      return newItem;
     }
-
-    const shader = createShaderModule(device, code, label);
-
-    lResource("Shader created", { hash, code: [code], label });
-
-    SHADER_CACHE.set(hash, shader);
-
-    return shader;
-  }, [device, code, label]);
+    return null;
+  }, [device, globalCache, key]);
 };
 
-const RENDER_PIPELINE_CACHE: Map<GPUShaderModule, GPURenderPipeline> =
-  new Map();
+const upsertDeviceCache = <K, V>(
+  device: GPUDevice,
+  globalCache: Map<GPUDevice, Map<K, V>>
+): Map<K, V> => {
+  const fromCache = globalCache.get(device);
+  if (fromCache) return fromCache;
 
-const COMPUTE_PIPELINE_CACHE: Map<GPUShaderModule, GPUComputePipeline> =
-  new Map();
+  const cache = new Map<K, V>();
+
+  globalCache.set(device, cache);
+
+  device.lost
+    .then(() => {
+      cache.clear();
+      globalCache.delete(device);
+    })
+    .catch(console.error);
+
+  return cache;
+};
+
+export const useShaderModule = (code: string, label?: string) => {
+  const key = useMemo(() => stringHash(code), [code]);
+
+  return useDeviceCache(
+    key,
+    (device) => {
+      const shader = hashed(
+        device.createShaderModule({
+          label,
+          code,
+        })
+      );
+      log(`Created shader module ${shortId(shader.instanceId)}`);
+      return shader;
+    },
+    SHADER_CACHE
+  );
+};
 
 export const usePipeline = (
-  shader: GPUShaderModule,
+  shader: H<GPUShaderModule> | null,
   label?: string,
-  buffers?: Versioned<GPUVertexBufferLayout[]>
+  buffers?: V<GPUVertexBufferLayout[]>
 ) => {
-  const device = useGPUDevice();
   const format = usePresentationFormat();
 
-  return useMemo(() => {
-    const fromCache = RENDER_PIPELINE_CACHE.get(shader);
-
-    if (fromCache) {
-      RENDER_PIPELINE_CACHE.get(shader);
-      return fromCache;
-    }
-
-    const pipeline = device.createRenderPipeline({
-      label,
-      layout: "auto",
-      vertex: {
-        module: shader,
-        buffers: buffers ? buffers.value : undefined,
-        entryPoint: "vsMain",
-      },
-      fragment: {
-        module: shader,
-        entryPoint: "fsMain",
-        targets: [{ format }],
-      },
-    });
-
-    RENDER_PIPELINE_CACHE.set(shader, pipeline);
-
-    lResource("Pipeline created", {
-      pipeline,
-      shader,
-      format,
-      RENDER_PIPELINE_CACHE,
-    });
-
-    return pipeline;
-    // eslint-disable-next-line
-  }, [device, label, shader, format, buffers?.version]);
+  return useDeviceCache(
+    `${shader?.instanceId ?? ""}${buffers?.useVersionCacheBurstId ?? ""}`,
+    (device) => {
+      const pipeline = hashed(
+        device.createRenderPipeline({
+          label,
+          layout: "auto",
+          vertex: {
+            module: shader!,
+            buffers: buffers,
+            entryPoint: "vsMain",
+          },
+          fragment: {
+            module: shader!,
+            entryPoint: "fsMain",
+            targets: [{ format }],
+          },
+        })
+      );
+      log(`Created render pipeline ${shortId(pipeline.instanceId)}`);
+      return pipeline;
+    },
+    RENDER_PIPELINE_CACHE
+  );
 };
 
 export const useComputePipeline = (
-  shader: GPUShaderModule,
+  shader?: H<GPUShaderModule> | null,
   label?: string
-): GPUComputePipeline => {
-  const device = useGPUDevice();
+): GPUComputePipeline | null => {
+  return useDeviceCache(
+    `${shader?.instanceId ?? ""}`,
+    (device) => {
+      const pipeline = hashed(
+        device.createComputePipeline({
+          label,
+          layout: "auto",
+          compute: {
+            module: shader!,
+            entryPoint: "computeMain",
+          },
+        })
+      );
+      log(`Created compute pipeline ${shortId(pipeline.instanceId)}`);
+      return pipeline;
+    },
+    COMPUTE_PIPELINE_CACHE
+  );
+};
 
-  return useMemo(() => {
-    const fromCache = COMPUTE_PIPELINE_CACHE.get(shader);
-
-    if (fromCache) {
-      return fromCache;
-    }
-
-    const pipeline = device.createComputePipeline({
-      label,
-      layout: "auto",
-      compute: {
-        module: shader,
-        entryPoint: "computeMain",
-      },
-    });
-
-    return pipeline;
-  }, [device, label, shader]);
+export const useSampler = ({
+  addressModeU,
+  addressModeV,
+  magFilter,
+  minFilter,
+}: {
+  addressModeU: GPUAddressMode;
+  addressModeV: GPUAddressMode;
+  magFilter: GPUFilterMode;
+  minFilter: GPUFilterMode;
+}) => {
+  const key = `${addressModeU}/${addressModeV}/${magFilter}/${minFilter}`;
+  return useDeviceCache(
+    key,
+    (device) => {
+      const sampler = hashed(
+        device.createSampler({
+          addressModeU,
+          addressModeV,
+          magFilter,
+          minFilter,
+        })
+      );
+      log(`Created sampler ${shortId(sampler.instanceId)}`);
+      return sampler;
+    },
+    SAMPLER_CACHE
+  );
 };

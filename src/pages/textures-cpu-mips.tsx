@@ -1,16 +1,17 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useMemo, type FC, useRef } from "react";
+import { type FC, useRef } from "react";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { usePipeline, useShaderModule } from "~/webgpu/shader";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
-import { ToOverlay } from "~/helpers/overlay";
-import { type MipTexture, generateMips } from "~/helpers/mips";
-import { type Vec3, mat4 } from "~/helpers/math";
+import { WebGPUApp } from "~/utils/webgpu-app";
+import { ToOverlay } from "~/utils/overlay";
+import { type MipTexture, generateMips } from "~/utils/mips";
+import { type Vec3, mat4 } from "~/utils/math";
+import { useMemoBag } from "~/utils/hooks";
 
 const Example: FC = () => {
   const shader = useShaderModule(
@@ -60,91 +61,103 @@ const Example: FC = () => {
   const device = useGPUDevice();
   const context = useWebGPUContext();
 
-  const { textures } = useMemo(() => {
-    const createTextureWithMips = (
-      mips: (MipTexture | ImageData)[],
-      label?: string
-    ) => {
-      const texture = device.createTexture({
-        label,
-        size: [mips[0]!.width, mips[0]!.height],
-        mipLevelCount: mips.length,
-        format: "rgba8unorm",
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      });
+  const { textures } =
+    useMemoBag(
+      { device },
+      ({ device }) => {
+        const createTextureWithMips = (
+          mips: (MipTexture | ImageData)[],
+          label?: string
+        ) => {
+          const texture = device.createTexture({
+            label,
+            size: [mips[0]!.width, mips[0]!.height],
+            mipLevelCount: mips.length,
+            format: "rgba8unorm",
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+          });
 
-      mips.forEach(({ data, width, height }, mipLevel) => {
-        device.queue.writeTexture(
-          { texture, mipLevel },
-          data,
-          { bytesPerRow: width * 4 },
-          { width, height }
-        );
-      });
-      return texture;
-    };
+          mips.forEach(({ data, width, height }, mipLevel) => {
+            device.queue.writeTexture(
+              { texture, mipLevel },
+              data,
+              { bytesPerRow: width * 4 },
+              { width, height }
+            );
+          });
+          return texture;
+        };
 
-    const textures = [
-      createTextureWithMips(createBlendedMipmap(), "blended"),
-      createTextureWithMips(createCheckedMipmap(), "checker"),
-    ];
+        const textures = [
+          createTextureWithMips(createBlendedMipmap(), "blended"),
+          createTextureWithMips(createCheckedMipmap(), "checker"),
+        ];
 
-    return { textures };
-  }, [device]);
+        return { textures };
+      },
+      [device]
+    ) ?? {};
 
   const kMatrixOffset = 0;
 
-  const { objectInfos } = useMemo(() => {
-    const objectInfos = [];
-    for (let i = 0; i < 8; ++i) {
-      const sampler = device.createSampler({
-        addressModeU: "repeat",
-        addressModeV: "repeat",
-        magFilter: i & 1 ? "linear" : "nearest",
-        minFilter: i & 2 ? "linear" : "nearest",
-        mipmapFilter: i & 4 ? "linear" : "nearest",
-      });
+  const { objectInfos } =
+    useMemoBag(
+      { device, textures, pipeline },
+      ({ device, textures, pipeline }) => {
+        const objectInfos = [];
+        for (let i = 0; i < 8; ++i) {
+          const sampler = device.createSampler({
+            addressModeU: "repeat",
+            addressModeV: "repeat",
+            magFilter: i & 1 ? "linear" : "nearest",
+            minFilter: i & 2 ? "linear" : "nearest",
+            mipmapFilter: i & 4 ? "linear" : "nearest",
+          });
 
-      // create a buffer for the uniform values
-      const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
-      const uniformBuffer = device.createBuffer({
-        label: "uniforms for quad",
-        size: uniformBufferSize,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
+          // create a buffer for the uniform values
+          const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
+          const uniformBuffer = device.createBuffer({
+            label: "uniforms for quad",
+            size: uniformBufferSize,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
 
-      // create a typedarray to hold the values for the uniforms in JavaScript
-      const uniformValues = new Float32Array(uniformBufferSize / 4);
-      const matrix = uniformValues.subarray(kMatrixOffset, 16);
+          // create a typedarray to hold the values for the uniforms in JavaScript
+          const uniformValues = new Float32Array(uniformBufferSize / 4);
+          const matrix = uniformValues.subarray(kMatrixOffset, 16);
 
-      const bindGroups = textures.map((texture) =>
-        device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: sampler },
-            { binding: 1, resource: texture.createView() },
-            { binding: 2, resource: { buffer: uniformBuffer } },
-          ],
-        })
-      );
+          const bindGroups = textures.map((texture) =>
+            device.createBindGroup({
+              layout: pipeline.getBindGroupLayout(0),
+              entries: [
+                { binding: 0, resource: sampler },
+                { binding: 1, resource: texture.createView() },
+                { binding: 2, resource: { buffer: uniformBuffer } },
+              ],
+            })
+          );
 
-      // Save the data we need to render this object.
-      objectInfos.push({
-        bindGroups,
-        matrix,
-        uniformValues,
-        uniformBuffer,
-      });
-    }
+          // Save the data we need to render this object.
+          objectInfos.push({
+            bindGroups,
+            matrix,
+            uniformValues,
+            uniformBuffer,
+          });
+        }
 
-    return { objectInfos };
-  }, [device, textures, pipeline]);
+        return { objectInfos };
+      },
+      [device, textures, pipeline]
+    ) ?? {};
 
   const canvas = useWebGPUCanvas();
 
   const toggleRef = useRef(true);
 
   useFrame(() => {
+    if (!device || !pipeline || !objectInfos) return;
+
     const renderPassDescriptor: GPURenderPassDescriptor = {
       label: "our basic canvas renderPass",
       colorAttachments: [

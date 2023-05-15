@@ -1,92 +1,81 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useMemo, type FC, useRef } from "react";
+import { useRef, type FC, useMemo } from "react";
+import { createCircleVerticesNonShadow } from "~/utils/geometry";
+
+import { useMemoBag } from "~/utils/hooks";
+import { rand } from "~/utils/other";
+
+import { WebGPUApp } from "~/utils/webgpu-app";
+import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { usePipeline, useShaderModule } from "~/webgpu/shader";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
-import { ToOverlay } from "~/helpers/overlay";
-import { rand, range } from "~/utils/other";
-import { useConsoleHook } from "~/webgpu/console-hook";
-import { createCircleVertices } from "~/helpers/geometry";
 
-/**
- * Differences betwen uniform buffers and storage buffers
- * - Uniform buffers can be faster for their typical use-case
- * - Storage buffers are large and W I D E
- *   - The minimum maximum size of a uniform buffer is 64k
- *   - The minimum maximum size of a storage buffer is 128meg!
- * - Storage buffers can be read/write, Uniform buffers are read-only
- */
-
-/**
- *
- */
 const Example: FC = () => {
-  const shader = useShaderModule(
-    /* wgsl */ `
-        struct OurStruct {
-          color: vec4f,
-          offset: vec2f,
-        };
-
-        struct OtherStruct {
-          scale: vec2f,
-        };
-
-        struct Vertex {
-          position: vec2f,
-        };
-
-        struct VSOutput {
-          @builtin(position) position: vec4f,
-          @location(0) color: vec4f,
-        }
-
-        @group(0) @binding(0) var<storage, read> ourStructs: array<OurStruct>;
-        @group(0) @binding(1) var<storage, read> otherStructs: array<OtherStruct>;
-        @group(0) @binding(2) var<storage, read> pos: array<Vertex>;
-
-        @vertex fn vsMain(
-          @builtin(vertex_index) vertexIndex: u32,
-          @builtin(instance_index) instanceIndex: u32
-        ) ->  VSOutput  {
-          let otherStruct = otherStructs[instanceIndex];
-          let ourStruct = ourStructs[instanceIndex];
-
-          var vsOut: VSOutput;
-          vsOut.position = vec4f(
-            pos[vertexIndex].position * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
-          vsOut.color = ourStruct.color;
-
-          return vsOut;
-        }
-      
-        @fragment fn fsMain(vsOut: VSOutput) -> @location(0) vec4f {
-          return vsOut.color;
-        }
-      `,
-    "rgb  triangle shader"
-  );
-
-  /**
-   * Pipeline will be recreated if the shader changes
-   */
-  const pipeline = usePipeline(shader, "Main render pipeline");
-
   const device = useGPUDevice();
+  const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
-  const kScaleOffset = 0;
+  const shader = useShaderModule(
+    /*wgsl*/ `
+    struct OurStruct {
+      color: vec4f,
+      offset: vec2f,
+    };
+
+    struct OtherStruct {
+      scale: vec2f,
+    };
+
+    struct Vertex {
+      position: vec2f,
+    };
+
+    struct VSOutput {
+      @builtin(position) position: vec4f,
+      @location(0) color: vec4f,
+    };
+
+    @group(0) @binding(0) var<storage, read> ourStructs: array<OurStruct>;
+    @group(0) @binding(1) var<storage, read> otherStructs: array<OtherStruct>;
+    @group(0) @binding(2) var<storage, read> pos: array<Vertex>;
+
+    @vertex fn vsMain(
+      @builtin(vertex_index) vertexIndex : u32,
+      @builtin(instance_index) instanceIndex: u32
+    ) -> VSOutput {
+      let otherStruct = otherStructs[instanceIndex];
+      let ourStruct = ourStructs[instanceIndex];
+
+      var vsOut: VSOutput;
+      vsOut.position = vec4f(
+          pos[vertexIndex].position * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
+      vsOut.color = ourStruct.color;
+      return vsOut;
+    }
+
+    @fragment fn fsMain(vsOut: VSOutput) -> @location(0) vec4f {
+      return vsOut.color;
+    }
+  `,
+    "example"
+  );
+
+  const pipeline = usePipeline(shader, "example");
 
   const kNumObjects = 100;
+
+  const initRef = useRef(false);
+
+  // create 2 storage buffers
   const staticUnitSize =
     4 * 4 + // color is 4 32bit floats (4bytes each)
     2 * 4 + // offset is 2 32bit floats (4bytes each)
     2 * 4; // padding
+
   const changingUnitSize = 2 * 4; // scale is 2 32bit floats (4bytes each)
   const staticStorageBufferSize = staticUnitSize * kNumObjects;
   const changingStorageBufferSize = changingUnitSize * kNumObjects;
@@ -95,117 +84,97 @@ const Example: FC = () => {
   const kColorOffset = 0;
   const kOffsetOffset = 4;
 
-  const {
-    objectInfos,
-    storageValues,
-    changingStorageBuffer,
-    bindGroup,
-    staticStorageValues,
-    numVertices,
-    staticStorageBuffer,
-  } = useMemo(() => {
-    const objectInfos = [];
+  const kScaleOffset = 0;
 
-    // create 2 storage buffers
-    const staticStorageBuffer = device.createBuffer({
-      label: "static storage for objects",
-      size: staticStorageBufferSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
+  const objectInfos = useRef([] as { scale: number }[]);
+  const staticStorageValues = useMemo(
+    () => new Float32Array(staticStorageBufferSize / 4),
+    []
+  );
 
-    const changingStorageBuffer = device.createBuffer({
-      label: "changing storage for objects",
-      size: changingStorageBufferSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
+  const storageValues = useMemo(
+    () => new Float32Array(changingStorageBufferSize / 4),
+    []
+  );
 
-    const staticStorageValues = new Float32Array(staticStorageBufferSize / 4);
+  const { changingStorageBuffer, bindGroup, numVertices } =
+    useMemoBag(
+      { device, pipeline },
+      ({ device, pipeline }) => {
+        const staticStorageBuffer = device.createBuffer({
+          label: "static storage for objects",
+          size: staticStorageBufferSize,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
 
-    for (let i = 0; i < kNumObjects; ++i) {
-      const staticOffset = i * (staticUnitSize / 4);
+        const changingStorageBuffer = device.createBuffer({
+          label: "changing storage for objects",
+          size: changingStorageBufferSize,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
 
-      // These are only set once so set them now
-      staticStorageValues.set(
-        [rand(), rand(), rand(), 1],
-        staticOffset + kColorOffset
-      ); // set the color
-      staticStorageValues.set(
-        [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-        staticOffset + kOffsetOffset
-      ); // set the offset
+        if (!initRef.current) {
+          initRef.current = true;
+          for (let i = 0; i < kNumObjects; ++i) {
+            const staticOffset = i * (staticUnitSize / 4);
 
-      objectInfos.push({
-        scale: rand(0.2, 0.5),
-      });
-    }
-    device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
+            // These are only set once so set them now
+            staticStorageValues.set(
+              [rand(), rand(), rand(), 1],
+              staticOffset + kColorOffset
+            ); // set the color
+            staticStorageValues.set(
+              [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+              staticOffset + kOffsetOffset
+            ); // set the offset
 
-    const storageValues = new Float32Array(changingStorageBufferSize / 4);
+            objectInfos.current.push({
+              scale: rand(0.2, 0.5),
+            });
+          }
+        }
 
-    // Vertex buffer setup
+        device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
 
-    const { vertexData, numVertices } = createCircleVertices({
-      radius: 0.5,
-      innerRadius: 0.25,
-    });
+        const { vertexData, numVertices } = createCircleVerticesNonShadow({
+          radius: 0.5,
+          innerRadius: 0.25,
+        });
 
-    const vertexStorageBuffer = device.createBuffer({
-      label: "storage buffer vertices",
-      size: vertexData.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
+        const vertexStorageBuffer = device.createBuffer({
+          label: "storage buffer vertices",
+          size: vertexData.byteLength,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
 
-    device.queue.writeBuffer(vertexStorageBuffer, 0, vertexData);
+        device.queue.writeBuffer(vertexStorageBuffer, 0, vertexData);
 
-    const bindGroup = device.createBindGroup({
-      label: "bind group for objects",
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: staticStorageBuffer } },
-        { binding: 1, resource: { buffer: changingStorageBuffer } },
-        { binding: 2, resource: { buffer: vertexStorageBuffer } },
-      ],
-    });
+        const bindGroup = device.createBindGroup({
+          label: "bind group for objects",
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: { buffer: staticStorageBuffer } },
+            { binding: 1, resource: { buffer: changingStorageBuffer } },
+            { binding: 2, resource: { buffer: vertexStorageBuffer } },
+          ],
+        });
 
-    return {
-      numVertices,
-      staticStorageValues,
-      objectInfos,
-      storageValues,
-      changingStorageBuffer,
-      staticStorageBuffer,
-      bindGroup,
-    };
-  }, [
-    device,
-    pipeline,
-    changingStorageBufferSize,
-    staticStorageBufferSize,
-    staticUnitSize,
-  ]);
-
-  const randomize = useConsoleHook("randomize", () => {
-    for (const i of range(kNumObjects)) {
-      const staticOffset = i * (staticUnitSize / 4);
-
-      staticStorageValues.set(
-        [rand(), rand(), rand(), 1],
-        staticOffset + kColorOffset
-      );
-      staticStorageValues.set(
-        [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-        staticOffset + kOffsetOffset
-      );
-      device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
-    }
-  });
-
-  const canvas = useWebGPUCanvas();
-
-  const objectCountRef = useRef(kNumObjects);
+        return { changingStorageBuffer, bindGroup, numVertices };
+      },
+      []
+    ) ?? {};
 
   useFrame(() => {
-    const renderPassDescriptor: GPURenderPassDescriptor = {
+    if (
+      !device ||
+      !pipeline ||
+      !changingStorageBuffer ||
+      !bindGroup ||
+      !numVertices
+    )
+      return;
+
+    const renderPassDescriptor = {
       label: "our basic canvas renderPass",
       colorAttachments: [
         {
@@ -213,18 +182,18 @@ const Example: FC = () => {
           clearValue: [0.3, 0.3, 0.3, 1],
           loadOp: "clear",
           storeOp: "store",
-        },
+        } as const,
       ],
     };
 
-    immediateRenderPass(device, "triangle encoder", (encoder) => {
+    immediateRenderPass(device, "example", (encoder) => {
       renderPass(encoder, renderPassDescriptor, (pass) => {
         pass.setPipeline(pipeline);
 
         const aspect = canvas.width / canvas.height;
 
         // set the scales for each object
-        objectInfos.forEach(({ scale }, ndx) => {
+        objectInfos.current.forEach(({ scale }, ndx) => {
           const offset = ndx * (changingUnitSize / 4);
           storageValues.set([scale / aspect, scale], offset + kScaleOffset); // set the scale
         });
@@ -232,40 +201,12 @@ const Example: FC = () => {
         device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
 
         pass.setBindGroup(0, bindGroup);
-        pass.draw(numVertices, objectCountRef.current); // call our vertex shader 3 times for each instance
+        pass.draw(numVertices, kNumObjects);
       });
     });
   });
 
-  const spanRef = useRef<HTMLSpanElement>(null);
-
-  return (
-    <ToOverlay>
-      <button
-        className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
-        onClick={randomize}
-      >
-        Randomize
-      </button>
-      <label className="font-bold text-white">
-        Number of instances:{" "}
-        <input
-          type="range"
-          min={0}
-          defaultValue={kNumObjects}
-          max={kNumObjects}
-          onInput={(event) => {
-            objectCountRef.current = parseInt(event.currentTarget.value, 10);
-
-            if (spanRef.current) {
-              spanRef.current.innerText = String(objectCountRef.current);
-            }
-          }}
-        />
-        <span ref={spanRef}>{kNumObjects}</span>
-      </label>
-    </ToOverlay>
-  );
+  return null;
 };
 
 const Home: NextPage = () => {
@@ -275,7 +216,7 @@ const Home: NextPage = () => {
         <title>WebGPU Tests</title>
         <link rel="icon" href="/favicon.svg" />
       </Head>
-      <WebGPUApp fullscreen>
+      <WebGPUApp fullscreen width={500} height={500}>
         <Example />
       </WebGPUApp>
     </>

@@ -7,7 +7,7 @@ import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { usePipeline, useShaderModule } from "~/webgpu/shader";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
+import { WebGPUApp } from "~/utils/webgpu-app";
 
 const Example: FC = () => {
   const entireShaderApparently = useShaderModule(
@@ -35,6 +35,8 @@ const Example: FC = () => {
   const context = useWebGPUContext();
 
   useFrame(() => {
+    if (!device || !pipeline) return;
+
     const renderPassDescriptor: GPURenderPassDescriptor = {
       label: "our basic canvas renderPass",
       colorAttachments: [
@@ -65,7 +67,7 @@ const Home: NextPage = () => {
         <title>WebGPU Tests</title>
         <link rel="icon" href="/favicon.svg" />
       </Head>
-      <WebGPUApp fullscreen>
+      <WebGPUApp fullscreen width={500} height={500}>
         <Example />
       </WebGPUApp>
     </>

@@ -1,28 +1,35 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useMemo, type FC, useRef } from "react";
+import { type FC, useRef } from "react";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { usePipeline, useShaderModule } from "~/webgpu/shader";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
-import { ToOverlay } from "~/helpers/overlay";
-import { loadImageBitmap } from "~/helpers/mips";
-import { type Vec3, mat4 } from "~/helpers/math";
-import { useAsyncResource } from "~/utils/hooks";
-import { numMipLevels } from "~/helpers/mips";
-import Link from "next/link";
+import { WebGPUApp } from "~/utils/webgpu-app";
+import { ToOverlay } from "~/utils/overlay";
+import { loadImageBitmap } from "~/utils/mips";
+import { type Vec3, mat4 } from "~/utils/math";
+import { useAsyncResource, useMemoBag } from "~/utils/hooks";
+import { numMipLevels } from "~/utils/mips";
+
+import { type H } from "~/utils/other";
 
 const generateMips = (() => {
   let sampler: GPUSampler;
   let shaderModule: GPUShaderModule;
+  let deviceUsedForModule: H<GPUDevice>;
+  let deviceUsedForPipe: H<GPUDevice>;
 
   const pipelineByFormat = {} as Record<GPUTextureFormat, GPURenderPipeline>;
 
-  return function generateMips(device: GPUDevice, texture: GPUTexture) {
-    if (!shaderModule) {
+  return function generateMips(device: H<GPUDevice>, texture: GPUTexture) {
+    if (
+      !shaderModule ||
+      deviceUsedForModule?.instanceId !== device.instanceId
+    ) {
+      deviceUsedForModule = device;
       shaderModule = device.createShaderModule({
         label: "textured quad shaders for mip level generation",
         code: `
@@ -67,7 +74,11 @@ const generateMips = (() => {
       });
     }
 
-    if (!pipelineByFormat[texture.format]) {
+    if (
+      !pipelineByFormat[texture.format] ||
+      deviceUsedForPipe?.instanceId !== device.instanceId
+    ) {
+      deviceUsedForPipe = device;
       pipelineByFormat[texture.format] = device.createRenderPipeline({
         label: "mip level generator pipeline",
         layout: "auto",
@@ -96,6 +107,7 @@ const generateMips = (() => {
       height = Math.max(1, (height / 2) | 0);
 
       const bindGroup = device.createBindGroup({
+        label: "Mipmap bind group layout",
         layout: pipeline.getBindGroupLayout(0),
         entries: [
           { binding: 0, resource: sampler },
@@ -132,7 +144,7 @@ const generateMips = (() => {
 })();
 
 function copySourceToTexture(
-  device: GPUDevice,
+  device: H<GPUDevice>,
   texture: GPUTexture,
   source: ImageBitmap,
   { flipY }: { flipY?: boolean } = {}
@@ -149,7 +161,7 @@ function copySourceToTexture(
 }
 
 function createTextureFromSource(
-  device: GPUDevice,
+  device: H<GPUDevice>,
   source: ImageBitmap,
   options: { mips?: boolean; flipY?: boolean } = {}
 ) {
@@ -167,7 +179,7 @@ function createTextureFromSource(
 }
 
 async function createTextureFromImage(
-  device: GPUDevice,
+  device: H<GPUDevice>,
   url: string,
   options: { mips?: boolean; flipY?: boolean } = {}
 ) {
@@ -228,77 +240,86 @@ const Example: FC = () => {
 
   const texturesState = useAsyncResource(
     async () =>
-      await Promise.all([
-        await createTextureFromImage(device, "/resources/f-texture.png", {
-          mips: true,
-          flipY: false,
-        }),
-        await createTextureFromImage(device, "/resources/coins.jpg", {
-          mips: true,
-        }),
-        await createTextureFromImage(
-          device,
-          "/resources/Granite_paving_tileable_512x512.jpeg",
-          { mips: true }
-        ),
-      ]),
+      device
+        ? await Promise.all([
+            await createTextureFromImage(device, "/resources/f-texture.png", {
+              mips: true,
+              flipY: false,
+            }),
+            await createTextureFromImage(device, "/resources/coins.jpg", {
+              mips: true,
+            }),
+            await createTextureFromImage(
+              device,
+              "/resources/Granite_paving_tileable_512x512.jpeg",
+              { mips: true }
+            ),
+          ])
+        : Promise.reject(),
     [device]
   );
 
-  const { objectInfos } = useMemo(() => {
-    const objectInfos = [];
+  const { objectInfos } =
+    useMemoBag(
+      { device, pipeline },
+      ({ device, pipeline }) => {
+        const objectInfos = [];
 
-    if (texturesState.type === "success") {
-      for (let i = 0; i < 8; ++i) {
-        const sampler = device.createSampler({
-          addressModeU: "repeat",
-          addressModeV: "repeat",
-          magFilter: i & 1 ? "linear" : "nearest",
-          minFilter: i & 2 ? "linear" : "nearest",
-          mipmapFilter: i & 4 ? "linear" : "nearest",
-        });
+        if (texturesState.type === "success") {
+          for (let i = 0; i < 8; ++i) {
+            const sampler = device.createSampler({
+              addressModeU: "repeat",
+              addressModeV: "repeat",
+              magFilter: i & 1 ? "linear" : "nearest",
+              minFilter: i & 2 ? "linear" : "nearest",
+              mipmapFilter: i & 4 ? "linear" : "nearest",
+            });
 
-        // create a buffer for the uniform values
-        const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
-        const uniformBuffer = device.createBuffer({
-          label: "uniforms for quad",
-          size: uniformBufferSize,
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+            // create a buffer for the uniform values
+            const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
+            const uniformBuffer = device.createBuffer({
+              label: "uniforms for quad",
+              size: uniformBufferSize,
+              usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
 
-        // create a typedarray to hold the values for the uniforms in JavaScript
-        const uniformValues = new Float32Array(uniformBufferSize / 4);
-        const matrix = uniformValues.subarray(kMatrixOffset, 16);
+            // create a typedarray to hold the values for the uniforms in JavaScript
+            const uniformValues = new Float32Array(uniformBufferSize / 4);
+            const matrix = uniformValues.subarray(kMatrixOffset, 16);
 
-        const bindGroups = texturesState.value.map((texture) =>
-          device.createBindGroup({
-            layout: pipeline.getBindGroupLayout(0),
-            entries: [
-              { binding: 0, resource: sampler },
-              { binding: 1, resource: texture.createView() },
-              { binding: 2, resource: { buffer: uniformBuffer } },
-            ],
-          })
-        );
+            const bindGroups = texturesState.value.map((texture) =>
+              device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [
+                  { binding: 0, resource: sampler },
+                  { binding: 1, resource: texture.createView() },
+                  { binding: 2, resource: { buffer: uniformBuffer } },
+                ],
+              })
+            );
 
-        // Save the data we need to render this object.
-        objectInfos.push({
-          bindGroups,
-          matrix,
-          uniformValues,
-          uniformBuffer,
-        });
-      }
-    }
+            // Save the data we need to render this object.
+            objectInfos.push({
+              bindGroups,
+              matrix,
+              uniformValues,
+              uniformBuffer,
+            });
+          }
+        }
 
-    return { objectInfos };
-  }, [device, texturesState, pipeline]);
+        return { objectInfos };
+      },
+      [device, texturesState, pipeline]
+    ) ?? {};
 
   const canvas = useWebGPUCanvas();
 
   const toggleRef = useRef(0);
 
   useFrame(() => {
+    if (!device || !pipeline || !objectInfos) return null;
+
     const renderPassDescriptor: GPURenderPassDescriptor = {
       label: "our basic canvas renderPass",
       colorAttachments: [
@@ -377,11 +398,6 @@ const Example: FC = () => {
       >
         Change Texture
       </button>
-      <ul>
-        <li>
-          <Link href="/canvas-texture">Canvas Texture</Link>
-        </li>
-      </ul>
     </ToOverlay>
   );
 };

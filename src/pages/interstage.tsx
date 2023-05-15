@@ -7,9 +7,9 @@ import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { usePipeline, useShaderModule } from "~/webgpu/shader";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
+import { WebGPUApp } from "~/utils/webgpu-app";
 import { useToggle } from "usehooks-ts";
-import { ToOverlay } from "~/helpers/overlay";
+import { ToOverlay } from "~/utils/overlay";
 import { match } from "ts-pattern";
 
 const InterpolationType = {
@@ -103,13 +103,13 @@ const Example: FC = () => {
         @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> OurVertexShaderOutput {
           var pos = array<vec2f, 3>(
             vec2f( 0.0,  0.5),  // top center
-            vec2f(-0.5, -0.5),  // bottom left
-            vec2f( 0.5, -0.5)   // bottom right
+            vec2f(-0.5, -1.5),  // bottom left
+            vec2f( 0.5, -1.5)   // bottom right
           );
           var color = array<vec4f, 3>(
-            vec4f(1, 0, 0, 1), // red
+            vec4f(1, 0, 1, 1), // red
             vec4f(0, 1, 0, 1), // green
-            vec4f(0, 0, 1, 1), // blue
+            vec4f(0, 1, 0, 1), // blue
           );
           var vsOutput: OurVertexShaderOutput;
             vsOutput.position = vec4f(pos[vertexIndex], 0.0, 1.0);
@@ -149,7 +149,7 @@ const Example: FC = () => {
         
         @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> OurVertexShaderOutput {
           var pos = array<vec2f, 3>(
-            vec2f( 0.0,  0.5),  // top center
+            vec2f( 0.0,  1.5),  // top center
             vec2f(-0.5, -0.5),  // bottom left
             vec2f( 0.5, -0.5)   // bottom right
           );
@@ -162,7 +162,7 @@ const Example: FC = () => {
           let red = vec4f(1, 0, 0, 1);
           let cyan = vec4f(0, 1, 1, 1);
 
-          let grid = vec2u(fsInput.position.xy) / 32;
+          let grid = vec2u(fsInput.position.xy) / 100;
           let checker = (grid.x + grid.y) % 2 == 1;
 
           return select(red, cyan, checker);
@@ -180,27 +180,29 @@ const Example: FC = () => {
   const context = useWebGPUContext();
 
   useFrame(() => {
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-      label: "our basic canvas renderPass",
-      colorAttachments: [
-        // This is the location(0)
-        // since we use context.getCurrentTexture as the view
-        // it will render to the canvas
-        {
-          view: context.getCurrentTexture().createView(),
-          clearValue: [0.0, 0.0, 0.0, 1],
-          loadOp: "clear",
-          storeOp: "store",
-        },
-      ],
-    };
+    if (device && pipeline) {
+      const renderPassDescriptor: GPURenderPassDescriptor = {
+        label: "our basic canvas  renderPass",
+        colorAttachments: [
+          // This is the location(0)
+          // since we use context.getCurrentTexture as the view
+          // it will render to the canvas
+          {
+            view: context.getCurrentTexture().createView(),
+            clearValue: [0.0, 0.0, 0.0, 1],
+            loadOp: "clear",
+            storeOp: "store",
+          },
+        ],
+      };
 
-    immediateRenderPass(device, "triangle encoder", (encoder) => {
-      renderPass(encoder, renderPassDescriptor, (pass) => {
-        pass.setPipeline(pipeline);
-        pass.draw(3);
+      immediateRenderPass(device, "triangle encoder", (encoder) => {
+        renderPass(encoder, renderPassDescriptor, (pass) => {
+          pass.setPipeline(pipeline);
+          pass.draw(3);
+        });
       });
-    });
+    }
   });
 
   return (
@@ -214,6 +216,7 @@ const Example: FC = () => {
       {value && (
         <>
           <select
+            value={type}
             onChange={(event) => setType(event.currentTarget.value)}
             className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
           >
@@ -226,6 +229,7 @@ const Example: FC = () => {
 
           {type !== "flat" && (
             <select
+              value={sampling}
               onChange={(event) => setSampling(event.currentTarget.value)}
               className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
             >

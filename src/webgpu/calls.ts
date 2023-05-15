@@ -1,4 +1,5 @@
-import { lResource } from "./logger";
+import { hashed } from "~/utils/other";
+import { log } from "./logger";
 
 export function getPresentationFormat() {
   return navigator.gpu.getPreferredCanvasFormat();
@@ -10,7 +11,7 @@ export function configureContextPresentation(
 ) {
   const presentationFormat = getPresentationFormat();
 
-  lResource("Presentation format configured", { presentationFormat });
+  log("Presentation format configured", { presentationFormat });
 
   context.configure({
     device,
@@ -31,9 +32,7 @@ export async function requestAdapter() {
     throw new Error("Failed to request devide");
   }
 
-  lResource("Device created", { device });
-
-  return device;
+  return hashed(device);
 }
 
 export function createShaderModule(
@@ -46,7 +45,7 @@ export function createShaderModule(
     code,
   });
 
-  return shader;
+  return hashed(shader);
 }
 
 export const immediateRenderPass = (

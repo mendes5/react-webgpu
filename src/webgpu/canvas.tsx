@@ -82,28 +82,30 @@ export const WebGPUCanvas = forwardRef<HTMLCanvasElement, Props>(
     const [inspectContext, uninspectContext] = useInspector("GPUCanvasContext");
 
     useEffect(() => {
-      setCanvas(ownRef.current);
+      if (device) {
+        setCanvas(ownRef.current);
 
-      const uninspect = inspectCanvas(ownRef.current);
+        const uninspect = inspectCanvas(ownRef.current);
 
-      if (ownRef.current) {
-        const gpuContext = ownRef.current.getContext("webgpu");
+        if (ownRef.current) {
+          const gpuContext = ownRef.current.getContext("webgpu");
 
-        inspectContext(gpuContext);
+          inspectContext(gpuContext);
 
-        if (gpuContext) {
-          setContext(gpuContext);
-          configureContextPresentation(device, gpuContext);
-          setPresentationFormat(getPresentationFormat());
-        } else {
-          setContext(new Error("Failed to request GPUCanvasContext"));
+          if (gpuContext) {
+            setContext(gpuContext);
+            configureContextPresentation(device, gpuContext);
+            setPresentationFormat(getPresentationFormat());
+          } else {
+            setContext(new Error("Failed to request GPUCanvasContext"));
+          }
         }
-      }
 
-      return () => {
-        uninspect();
-        uninspectContext();
-      };
+        return () => {
+          uninspect();
+          uninspectContext();
+        };
+      }
     }, [inspectCanvas, uninspectContext, inspectContext, device]);
 
     const [className, size] = useMemo(() => {

@@ -1,7 +1,11 @@
-export const lResource = (...args: unknown[]) => {
+import debug from "debug";
+
+const d = debug("backend");
+
+export const log = (message: string, ...args: unknown[]) => {
   if (typeof window !== "undefined") {
     if (localStorage.debug) {
-      console.log("backend:resource-manager", ...args);
+      d(message, ...args);
     }
   }
 };

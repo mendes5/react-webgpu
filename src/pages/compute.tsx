@@ -5,9 +5,9 @@ import { useMemo, type FC, useState } from "react";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useComputePipeline, useShaderModule } from "~/webgpu/shader";
 import { computePass, immediateRenderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
-import { useConsoleHook } from "~/webgpu/console-hook";
-import { useMutation } from "@tanstack/react-query";
+import { WebGPUApp } from "~/utils/webgpu-app";
+import { useAsyncAction, useMemoBag } from "~/utils/hooks";
+import { ToOverlay } from "~/utils/overlay";
 
 const Example: FC = () => {
   const entireShaderApparently = useShaderModule(
@@ -31,102 +31,117 @@ const Example: FC = () => {
 
   const device = useGPUDevice();
 
-  const input = useMemo(() => new Float32Array([1, 3, 5]), []);
+  const input = useMemo(() => new Float32Array([1, 3, 5, 5, 9, 7, 4, 5]), []);
 
-  const { resultBuffer, bindGroup, workBuffer } = useMemo(() => {
-    const workBuffer = device.createBuffer({
-      label: "work buffer",
-      size: input.byteLength,
-      usage:
-        //  Here it is! since we used STORAGE
-        // it means the GPU can write to this buffer
-        GPUBufferUsage.STORAGE |
-        GPUBufferUsage.COPY_SRC |
-        GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(workBuffer, 0, input);
+  const { resultBuffer, bindGroup, workBuffer } =
+    useMemoBag(
+      { device, pipeline },
+      ({ device, pipeline }) => {
+        const workBuffer = device.createBuffer({
+          label: "work buffer",
+          size: input.byteLength,
+          usage:
+            GPUBufferUsage.STORAGE |
+            GPUBufferUsage.COPY_SRC |
+            GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(workBuffer, 0, input);
 
-    const resultBuffer = device.createBuffer({
-      label: "result buffer",
-      size: input.byteLength,
-      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-    });
+        const resultBuffer = device.createBuffer({
+          label: "result buffer",
+          size: input.byteLength,
+          usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
 
-    const bindGroup = device.createBindGroup({
-      label: "bindGroup for work buffer",
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: workBuffer } }],
-    });
+        const bindGroup = device.createBindGroup({
+          label: "bindGroup for work buffer",
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [{ binding: 0, resource: { buffer: workBuffer } }],
+        });
 
-    return { resultBuffer, bindGroup, workBuffer };
-  }, [device, input, pipeline]);
+        return { resultBuffer, bindGroup, workBuffer };
+      },
+      [input]
+    ) ?? {};
 
-  const doCompute = useConsoleHook("doCompute", async () => {
-    const computeDescriptor: GPUComputePassDescriptor = {
-      label: "our basic canvas renderPass",
-    };
+  const { execute, locked } = useAsyncAction(
+    {
+      device,
+      pipeline,
+      bindGroup,
+      workBuffer,
+      resultBuffer,
+    },
+    async ({ device, pipeline, bindGroup, workBuffer, resultBuffer }) => {
+      const computeDescriptor: GPUComputePassDescriptor = {
+        label: "our basic canvas renderPass",
+      };
 
-    const start = performance.now();
+      const start = performance.now();
 
-    immediateRenderPass(device, "doubling encoder", (encoder) => {
-      computePass(encoder, computeDescriptor, (pass) => {
-        pass.setPipeline(pipeline);
-        pass.setBindGroup(0, bindGroup);
-        pass.dispatchWorkgroups(input.length);
+      immediateRenderPass(device, "doubling encoder", (encoder) => {
+        computePass(encoder, computeDescriptor, (pass) => {
+          pass.setPipeline(pipeline);
+          pass.setBindGroup(0, bindGroup);
+          pass.dispatchWorkgroups(input.length);
+        });
+
+        encoder.copyBufferToBuffer(
+          workBuffer,
+          0,
+          resultBuffer,
+          0,
+          resultBuffer.size
+        );
       });
 
-      encoder.copyBufferToBuffer(
-        workBuffer,
-        0,
-        resultBuffer,
-        0,
-        resultBuffer.size
-      );
-    });
+      await resultBuffer.mapAsync(GPUMapMode.READ);
+      // eslint-disable-next-line
+      // @ts-ignore
+      const result = new Float32Array(resultBuffer.getMappedRange().slice());
+      resultBuffer.unmap();
 
-    await resultBuffer.mapAsync(GPUMapMode.READ);
-    // eslint-disable-next-line
-    // @ts-ignore
-    const result = new Float32Array(resultBuffer.getMappedRange().slice());
-    resultBuffer.unmap();
+      const end = performance.now();
 
-    const end = performance.now();
-
-    return { input, result, elapsed: end - start };
-  });
-
-  const doComputeMutation = useMutation(doCompute);
+      return { input, result, elapsed: end - start };
+    },
+    []
+  );
 
   const [result, setResult] = useState("");
 
   return (
-    <div className="flex w-1/5 flex-col gap-4">
-      <button
-        className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
-        disabled={doComputeMutation.isLoading}
-        onClick={() => {
-          doCompute()
-            ?.then(({ input, result, elapsed }) => {
-              const out = {
-                input: [...input],
-                output: [...result],
-                elapsed,
-              };
+    <>
+      <ToOverlay key="1">
+        <button
+          className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
+          disabled={locked}
+          onClick={() => {
+            execute()
+              .then((maybe) => {
+                if (!maybe) return;
+                const { input, result, elapsed } = maybe;
+                const out = {
+                  input: [...input],
+                  output: [...result],
+                  elapsed,
+                };
 
-              setResult(JSON.stringify(out, null, "  "));
-            })
-            .catch(console.error);
-        }}
-      >
-        Double by 2 using compute shader
-      </button>
+                setResult(JSON.stringify(out, null, "  "));
+              })
+              .catch(console.error);
+          }}
+        >
+          Double by 2 using compute shader
+        </button>
+      </ToOverlay>
       <textarea
         className="h-2/3 min-h-[500px] w-full font-mono"
         readOnly
         disabled
         value={result}
       />
-    </div>
+    </>
   );
 };
 

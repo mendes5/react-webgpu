@@ -1,16 +1,15 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useMemo, type FC, useState, useId, useRef } from "react";
+import { type FC, useState, useRef } from "react";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import { usePipeline, useShaderModule } from "~/webgpu/shader";
+import { usePipeline, useSampler, useShaderModule } from "~/webgpu/shader";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
-import { ToOverlay } from "~/helpers/overlay";
-import { useHashedCache } from "~/utils/hooks";
-import Link from "next/link";
+import { WebGPUApp } from "~/utils/webgpu-app";
+import { ToOverlay } from "~/utils/overlay";
+import { useMemoBag } from "~/utils/hooks";
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",
@@ -78,15 +77,18 @@ const Example: FC = () => {
   const [minFilter, setMingFilter] = useState<string>(FilterMode.nearest);
   const scaleRef = useRef(1);
 
-  const { texture } = useMemo(() => {
-    const kTextureWidth = 5;
-    const kTextureHeight = 7;
-    const _ = [255, 0, 0, 255]; // red
-    const y = [255, 255, 0, 255]; // yellow
-    const b = [0, 0, 255, 255]; // blue
+  const { texture } =
+    useMemoBag(
+      { device },
+      ({ device }) => {
+        const kTextureWidth = 5;
+        const kTextureHeight = 7;
+        const _ = [255, 0, 0, 255]; // red
+        const y = [255, 255, 0, 255]; // yellow
+        const b = [0, 0, 255, 255]; // blue
 
-    // prettier-ignore
-    const textureData = new Uint8Array([   
+        // prettier-ignore
+        const textureData = new Uint8Array([   
       _, _, _, _, _,
       _, y, _, _, _,
       _, y, _, _, _,
@@ -96,75 +98,80 @@ const Example: FC = () => {
       b, _, _, _, _,
     ].flat());
 
-    const texture = device.createTexture({
-      size: [kTextureWidth, kTextureHeight],
-      format: "rgba8unorm",
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
+        const texture = device.createTexture({
+          size: [kTextureWidth, kTextureHeight],
+          format: "rgba8unorm",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
 
-    device.queue.writeTexture(
-      { texture },
-      textureData,
-      { bytesPerRow: kTextureWidth * 4 },
-      { width: kTextureWidth, height: kTextureHeight }
-    );
+        device.queue.writeTexture(
+          { texture },
+          textureData,
+          { bytesPerRow: kTextureWidth * 4 },
+          { width: kTextureWidth, height: kTextureHeight }
+        );
 
-    return { texture };
-  }, [device]);
+        return { texture };
+      },
+      [device]
+    ) ?? {};
 
   const { uniformBuffer, uniformValues, kScaleOffset, kOffsetOffset } =
-    useMemo(() => {
-      const uniformBufferSize =
-        2 * 4 + // scale is 2 32bit floats (4bytes each)
-        2 * 4; // offset is 2 32bit floats (4bytes each)
-      const uniformBuffer = device.createBuffer({
-        label: "uniforms for quad",
-        size: uniformBufferSize,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
+    useMemoBag(
+      { device },
+      ({ device }) => {
+        const uniformBufferSize =
+          2 * 4 + // scale is 2 32bit floats (4bytes each)
+          2 * 4; // offset is 2 32bit floats (4bytes each)
+        const uniformBuffer = device.createBuffer({
+          label: "uniforms for quad",
+          size: uniformBufferSize,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
 
-      // create a typedarray to hold the values for the uniforms in JavaScript
-      const uniformValues = new Float32Array(uniformBufferSize / 4);
+        // create a typedarray to hold the values for the uniforms in JavaScript
+        const uniformValues = new Float32Array(uniformBufferSize / 4);
 
-      // offsets to the various uniform values in float32 indices
-      const kScaleOffset = 0;
-      const kOffsetOffset = 2;
+        // offsets to the various uniform values in float32 indices
+        const kScaleOffset = 0;
+        const kOffsetOffset = 2;
 
-      return { uniformBuffer, uniformValues, kScaleOffset, kOffsetOffset };
-    }, [device]);
+        return { uniformBuffer, uniformValues, kScaleOffset, kOffsetOffset };
+      },
+      [device]
+    ) ?? {};
 
-  const { sampler } = useHashedCache(
-    useId(),
-    () => {
-      const sampler = device.createSampler({
-        addressModeU: modeU as GPUAddressMode,
-        addressModeV: modeV as GPUAddressMode,
-        magFilter: magFilter as GPUFilterMode,
-        minFilter: minFilter as GPUFilterMode,
-      });
+  const sampler = useSampler({
+    addressModeU: modeU as GPUAddressMode,
+    addressModeV: modeV as GPUAddressMode,
+    magFilter: magFilter as GPUFilterMode,
+    minFilter: minFilter as GPUFilterMode,
+  });
 
-      return { sampler };
-    },
-    [device],
-    [modeU, modeV, magFilter, minFilter]
-  );
+  const { bindGroup } =
+    useMemoBag(
+      { device, pipeline, sampler, texture, uniformBuffer },
+      ({ device, pipeline, sampler, texture, uniformBuffer }) => {
+        const bindGroup = device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: sampler },
+            { binding: 1, resource: texture.createView() },
+            { binding: 2, resource: { buffer: uniformBuffer } },
+          ],
+        });
 
-  const { bindGroup } = useMemo(() => {
-    const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: sampler },
-        { binding: 1, resource: texture.createView() },
-        { binding: 2, resource: { buffer: uniformBuffer } },
-      ],
-    });
-
-    return { bindGroup };
-  }, [sampler, device, pipeline, uniformBuffer, texture]);
+        return { bindGroup };
+      },
+      [sampler, device, pipeline, uniformBuffer, texture]
+    ) ?? {};
 
   const canvas = useWebGPUCanvas();
 
   useFrame((time) => {
+    if (!device || !pipeline || !bindGroup || !uniformValues || !uniformBuffer)
+      return null;
+
     time *= 0.001;
 
     const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -264,14 +271,6 @@ const Example: FC = () => {
           </select>
         </>
       )}
-      <ul>
-        <li>
-          <Link href="/index-buffers">With CPU Mips</Link>
-        </li>
-        <li>
-          <Link href="/external-textures">External Textures</Link>
-        </li>
-      </ul>
     </ToOverlay>
   );
 };

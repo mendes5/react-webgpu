@@ -1,16 +1,16 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useMemo, type FC } from "react";
+import { type FC } from "react";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { usePipeline, useShaderModule } from "~/webgpu/shader";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
-import { WebGPUApp } from "~/helpers/webgpu-app";
-import { ToOverlay } from "~/helpers/overlay";
+import { WebGPUApp } from "~/utils/webgpu-app";
+import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
-import { useConsoleHook } from "~/webgpu/console-hook";
+import { useAction, useMemoBag } from "~/utils/hooks";
 
 // The entire random triangles thing is just this
 // component, everything else is a one layer deep wrapper
@@ -62,77 +62,95 @@ const Example: FC = () => {
 
   const kScaleOffset = 0;
 
-  const { objectInfos } = useMemo(() => {
-    // Probably will need some code
-    // to abstract away this offset calculation
-    const staticUniformBufferSize =
-      4 * 4 + // color is 4 32bit floats (4bytes each)
-      2 * 4 + // offset is 2 32bit floats (4bytes each)
-      2 * 4; // padding
+  const { objectInfos } =
+    useMemoBag(
+      { device, pipeline },
+      ({ device, pipeline }) => {
+        // Probably will need some code
+        // to abstract away this offset calculation
+        const staticUniformBufferSize =
+          4 * 4 + // color is 4 32bit floats (4bytes each)
+          2 * 4 + // offset is 2 32bit floats (4bytes each)
+          2 * 4; // padding
 
-    const uniformBufferSize = 2 * 4; // scale is 2 32bit floats (4bytes each)
+        const uniformBufferSize = 2 * 4; // scale is 2 32bit floats (4bytes each)
 
-    const kNumObjects = 100;
-    const objectInfos = [];
+        const kNumObjects = 100;
+        const objectInfos = [] as {
+          scale: number;
+          uniformBuffer: GPUBuffer;
+          staticUniformBuffer: GPUBuffer;
+          staticValues: Float32Array;
+          uniformValues: Float32Array;
+          bindGroup: GPUBindGroup;
+        }[];
 
-    // Not a fan of the 100 bind groups approach
-    // could be usefull still for thigs
-    // that share the same shader but their
-    // data dont change in bulk too often
-    for (const i of range(kNumObjects)) {
-      const staticUniformBuffer = device.createBuffer({
-        label: `static uniforms for obj: ${i}`,
-        size: staticUniformBufferSize,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
+        // Not a fan of the 100 bind groups approach
+        // could be usefull still for thigs
+        // that share the same shader but their
+        // data dont change in bulk too often
+        for (const i of range(kNumObjects)) {
+          const staticUniformBuffer = device.createBuffer({
+            label: `static uniforms for obj: ${i}`,
+            size: staticUniformBufferSize,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
 
-      const staticValues = new Float32Array(staticUniformBufferSize / 4);
-      staticValues.set([rand(), rand(), rand(), 1], kColorOffset);
-      staticValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], kOffsetOffset);
+          const staticValues = new Float32Array(staticUniformBufferSize / 4);
+          staticValues.set([rand(), rand(), rand(), 1], kColorOffset);
+          staticValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], kOffsetOffset);
 
-      // Upload once, and then never
-      device.queue.writeBuffer(staticUniformBuffer, 0, staticValues);
+          // Upload once, and then never
+          device.queue.writeBuffer(staticUniformBuffer, 0, staticValues);
 
-      const uniformValues = new Float32Array(uniformBufferSize / 4);
-      const uniformBuffer = device.createBuffer({
-        label: `changing uniforms for obj: ${i}`,
-        size: uniformBufferSize,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
+          const uniformValues = new Float32Array(uniformBufferSize / 4);
+          const uniformBuffer = device.createBuffer({
+            label: `changing uniforms for obj: ${i}`,
+            size: uniformBufferSize,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
 
-      const bindGroup = device.createBindGroup({
-        label: `bind group for obj: ${i}`,
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: staticUniformBuffer } },
-          { binding: 1, resource: { buffer: uniformBuffer } },
-        ],
-      });
+          const bindGroup = device.createBindGroup({
+            label: `bind group for obj: ${i}`,
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: { buffer: staticUniformBuffer } },
+              { binding: 1, resource: { buffer: uniformBuffer } },
+            ],
+          });
 
-      objectInfos.push({
-        scale: rand(0.2, 0.5),
-        uniformBuffer,
-        staticUniformBuffer,
-        staticValues,
-        uniformValues,
-        bindGroup,
-      });
-    }
+          const out = {
+            scale: rand(0.2, 0.5),
+            uniformBuffer,
+            staticUniformBuffer,
+            staticValues,
+            uniformValues,
+            bindGroup,
+          };
 
-    return { objectInfos };
-  }, [device, pipeline]);
+          objectInfos.push(out);
+        }
 
-  const randomize = useConsoleHook("randomize", () => {
-    for (const { staticValues, staticUniformBuffer } of objectInfos) {
-      staticValues.set([rand(), rand(), rand(), 1], kColorOffset);
-      staticValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], kOffsetOffset);
+        return { objectInfos };
+      },
+      [device, pipeline]
+    ) ?? {};
 
-      // Upload once, here if the user clicks
-      // since WebGPU is not statefull we can do it whenever we want
-      // no need to wait a render pass to finish or something like that
-      device.queue.writeBuffer(staticUniformBuffer, 0, staticValues);
-    }
-  });
+  const { locked, execute } = useAction(
+    { device, objectInfos },
+    ({ device, objectInfos }) => {
+      for (const { staticValues, staticUniformBuffer } of objectInfos) {
+        staticValues.set([rand(), rand(), rand(), 1], kColorOffset);
+        staticValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], kOffsetOffset);
+
+        // Upload once, here if the user clicks
+        // since WebGPU is not statefull we can do it whenever we want
+        // no need to wait a render pass to finish or something like that
+        device.queue.writeBuffer(staticUniformBuffer, 0, staticValues);
+      }
+    },
+    []
+  );
 
   /**
    * It's so much more easy that way...
@@ -146,6 +164,8 @@ const Example: FC = () => {
   const canvas = useWebGPUCanvas();
 
   useFrame(() => {
+    if (!pipeline || !objectInfos || !device) return null;
+
     const renderPassDescriptor: GPURenderPassDescriptor = {
       label: "our basic canvas renderPass",
       colorAttachments: [
@@ -183,7 +203,8 @@ const Example: FC = () => {
     <ToOverlay>
       <button
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
-        onClick={randomize}
+        disabled={locked}
+        onClick={execute}
       >
         Randomize
       </button>
