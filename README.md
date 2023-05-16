@@ -1,17 +1,8 @@
 # WebGPU
 
-Running the demo:
+See it live:
 
-```
-git clone git@github.com:mendes5/web-gpu-react.git
-cd web-gpu-react
-cp .env.example .env
-nvm use
-yarn
-yarn dev
-```
-
-# Whats this?
+[react-webgpu.vercel.app](https://react-webgpu.vercel.app/)
 
 This is a research project trying to evaluate how a declarative/reactive graphics engine would work.
 
@@ -22,6 +13,17 @@ It's basically following the [WebGPU Fundamentals](https://webgpufundamentals.or
 So instead of writing the demos in a imperative style, Im building a set of reactive hooks and components that would do the equivalent thing.
 
 It uses ReactJS, but just as an reactive runtime, the ideas implemented here could work with any fiber-based declarative/reactive system. Using React also gives us the benefit of having stuff like NextJS and SSR to implement some truly wicked ideas like using the backend to store state, and using hydration to resume the app to an state where the user left off.
+
+### Running the demo:
+
+```
+git clone git@github.com:mendes5/web-gpu-react.git
+cd web-gpu-react
+cp .env.example .env
+nvm use
+yarn
+yarn dev
+```
 
 # Does it work?
 
