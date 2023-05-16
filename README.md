@@ -209,7 +209,7 @@ useMemo(() => {}, [...deps]);
 
 This allocates an entire function closure and array, that might not even being used. The issue will grow fast when your entire application uses code like this as it's primitives for controlling everything in fast-paced apps, in the short term you can use `React.memo` to avoid deep re-render chains to minimize the issue.
 
-But again, maybe we need a new programming language, not just another one that has a new fresh syntax for if/else and for loops, but one that is thought from the ground up with fibers/declaratively/reactivity in mind, I was on the marked for declarative/reactive based programming some time ago, but all I could find are more runtimes like React, or Skip, a programming language by Meta, whose site doesn't even has SSL/HTTPS
+But again, maybe we need a new programming language, not just another one that has a new fresh syntax for if/else and for loops, but one that is thought from the ground up with fibers/declaratively/reactivity in mind, I was on the market for declarative/reactive based programming some time ago, but all I could find are more runtimes like React, or Skip, a programming language by Meta, whose site doesn't even has SSL/HTTPS
 
 http://skiplang.com/
 

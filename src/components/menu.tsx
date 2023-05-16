@@ -21,7 +21,7 @@ export const Menu = () => {
   return (
     <div className="flex flex-col gap-1">
       {links.map(({ href, label }) => (
-        <Link className="text-white underline" href={href}>
+        <Link key={href} className="text-white underline" href={href}>
           {label}
         </Link>
       ))}
@@ -33,7 +33,7 @@ export const DarkMenu = () => {
   return (
     <div className="flex flex-col gap-1">
       {links.map(({ href, label }) => (
-        <Link className="underline" href={href}>
+        <Link key={href} className="underline" href={href}>
           {label}
         </Link>
       ))}
