@@ -19,9 +19,9 @@ It's basically following the [WebGPU Fundamentals](https://webgpufundamentals.or
 
 ![X](./screenshots/6.png)
 
-So instead of wirtting the demos in a imperative style, Im building a set of reactive hooks and components that would do the equivalent thing.
+So instead of writing the demos in a imperative style, Im building a set of reactive hooks and components that would do the equivalent thing.
 
-It uses ReactJS, but just as an reactive runtime, the ideas implemented here could work with any fiber-based declarative/reactive system. Using React also gives us the benefit of having stuff like NextJS and SSR implement some thruly wiked ideas like using the backend to store state, and using hydration to resume the app to an state where the user left off.
+It uses ReactJS, but just as an reactive runtime, the ideas implemented here could work with any fiber-based declarative/reactive system. Using React also gives us the benefit of having stuff like NextJS and SSR to implement some truly wicked ideas like using the backend to store state, and using hydration to resume the app to an state where the user left off.
 
 # Does it work?
 
@@ -59,26 +59,26 @@ useFrame(() => {
 return <button onClick={toggle}>Toggle shader</button>;
 ```
 
-The actual code is a bit larger than that but the principle is the same: We are writting fully declarative code, we say we want a shader or another based on a toggle that is just a react hook controlled by an html button.
+The actual code is a bit larger than that but the principle is the same: We are writing fully declarative code, we say we want a shader or another based on a toggle that is just a react hook controlled by an html button.
 
-Try doing that in any other engine, (it might be easier actually), but this was pulled off with just a thin reactive wrapper arround the WebGPU API instead of megabytes of code, you also **cannot** get more declarative than this.
+Try doing that in any other engine, (it might be easier actually), but this was pulled off with just a thin reactive wrapper around the WebGPU API instead of megabytes of code, you also **cannot** get more declarative than this.
 
-One might say that I have the entire ReactJS working for me, but then again, that is actually the thing possibiliting this programming paradigm, it could probably be its own programming language optimized for fast compare between GC-managed values for efficient memoization. But that is a project for another day...
+One might say that I have the entire ReactJS working for me, but then again, that is actually the thing allowing this programming paradigm, it could probably be its own programming language optimized for fast compare between GC-managed values for efficient memoization. But that is a project for another day...
 
 We are juggling like 3-5 concepts at any given time inside those components, like:
 
 - Adding the button that changes the shader
 - Creating the GPU resources, shaders/pipelines/command buffers/encoders
 - Scheduling code to run per frame
-- Doing the actual switch betwen shaders
+- Doing the actual switch between shaders
 
-> What about separation of concers?
+> What about separation of concerns?
 
 We probably should have it still, but being able to keep everything related to a piece of behavior inside a single component looks and feel so natural after you write a couple of those.
 
-Imagine, being a game engine dev, and needing the mouse position inside some random shader uniform, you are right in the code that does the upload, but you can't just grab the mouse position out of thin air, you need to talk a bit to some `AbstractHDISystem` in order to get the actual value, after some testing and bug fixing you finnaly get the mouse position.
+Imagine, being a game engine dev, and needing the mouse position inside some random shader uniform, you are right in the code that does the upload, but you can't just grab the mouse position out of thin air, you need to talk a bit to some `AbstractHDISystem` in order to get the actual value, after some testing and bug fixing you finally get the mouse position.
 
-Here you would just `useCursorPostion()` inside the component.
+Here you would just `useCursorPosition()` inside the component.
 
 I think [@mxstbr](https://twitter.com/mxstbr/status/993455977008594944?s=20) puts it better.
 
@@ -88,7 +88,7 @@ Just replace programming language with engine system.
 
 # Handling device lost events
 
-My favorite detail here is how well this architecture handle crahes. Normally if your rendering device is lost ou are out of luck, all your GPU state is lost, to get back at where you left off, you would need to restart the game or application.
+My favorite detail here is how well this architecture handle crashes. Normally if your rendering device is lost ou are out of luck, all your GPU state is lost, to get back at where you left off, you would need to restart the game or application.
 
 Here the resources are "just created again" and the frame loop restart.
 
@@ -127,13 +127,13 @@ You will get your shader and still get to keep your application state, so more h
 
 ![](./screenshots/3.png)
 
-All of those 6 values are kept betwen hot-reloads, it is a magical developer experience.
+All of those 6 values are kept between hot-reloads, it is a magical developer experience.
 
 # The bad parts
 
-Ther would be no way a system like this would pop from nowhere and offers only benefits, there is some bad things too.
+There would be no way a system like this would pop from nowhere and offers only benefits, there is some bad things too.
 
-My main issue right now is fighting with React's lack of support for condictionally rendering hooks, without it, im forced to take the decision `if (device !== null)` literally everywhere that device is used.
+My main issue right now is fighting with React's lack of support for conditionally rendering hooks, without it, im forced to take the decision `if (device !== null)` literally everywhere that device is used.
 
 The alternative is making a:
 
@@ -166,7 +166,7 @@ const resource = useMemo(() => {
 
 I plan to solve this by hiding it behind "smart" hooks like `useMemoBag({device}, ({device}) => {...}, [])`, but they are tedious to manage.
 
-Ideally I would be able to just not render any hooks and straight out render my children while still kepping my state:
+Ideally I would be able to just not render any hooks and straight out render my children while still keeping my state:
 
 ```js
 const Cube = () => {
@@ -207,9 +207,9 @@ A single hook like this:
 useMemo(() => {}, [...deps]);
 ```
 
-This alocates an entire function closure and array, that might not even being used. The issue will grow fast when your entire application uses code like this as it's primitives for controlling everytinhg in fast-paced apps, in the short term you can use `React.memo` to avoid deep re-render chains to minimize the issue.
+This allocates an entire function closure and array, that might not even being used. The issue will grow fast when your entire application uses code like this as it's primitives for controlling everything in fast-paced apps, in the short term you can use `React.memo` to avoid deep re-render chains to minimize the issue.
 
-But again, maybe we need a new programming language, not just another one that has a new fresh syntax for if/else and for loops, but one that is tought from the ground up with fibers/declarativity/reactivity in mind, I was on the marked for declarative/reactive based programming some time ago, but all I could find are more runtimes like React, or Skip, a programming language by Meta, whose site doesn't even has SSL/HTTPS
+But again, maybe we need a new programming language, not just another one that has a new fresh syntax for if/else and for loops, but one that is thought from the ground up with fibers/declaratively/reactivity in mind, I was on the marked for declarative/reactive based programming some time ago, but all I could find are more runtimes like React, or Skip, a programming language by Meta, whose site doesn't even has SSL/HTTPS
 
 http://skiplang.com/
 
