@@ -2,7 +2,7 @@ import { type NextPage } from "next";
 import Head from "next/head";
 
 import { api } from "~/utils/api";
-import { Menu } from "~/components/menu";
+import { DarkMenu } from "~/components/menu";
 
 const Home: NextPage = () => {
   const version = api.meta.version.useQuery();
@@ -14,7 +14,7 @@ const Home: NextPage = () => {
         <link rel="icon" href="/favicon.svg" />
         <meta rel="app-version" content={version.data} />
       </Head>
-      <Menu />
+      <DarkMenu />
     </>
   );
 };
