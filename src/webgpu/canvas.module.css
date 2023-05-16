@@ -2,3 +2,8 @@
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
+
+#__next canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
