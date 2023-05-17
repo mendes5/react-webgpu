@@ -91,10 +91,13 @@ export const numMipLevels = (...sizes: number[]) => {
   return (1 + Math.log2(maxSize)) | 0;
 };
 
-export async function loadImageBitmap(url: string) {
+export async function loadImageBitmap(
+  url: string,
+  options?: ImageBitmapOptions
+) {
   const res = await fetch(url);
   const blob = await res.blob();
-  return await createImageBitmap(blob, { colorSpaceConversion: "none" });
+  return await createImageBitmap(blob, options);
 }
 
 export function getSourceSize(source: GPUImageCopyExternalImage["source"]) {

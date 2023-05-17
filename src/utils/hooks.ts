@@ -165,7 +165,7 @@ export const useAsyncV = <T extends object>(
   return [result, increment];
 };
 
-type AsyncState<T> =
+export type AsyncState<T> =
   | {
       type: "pending";
     }

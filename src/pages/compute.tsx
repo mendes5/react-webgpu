@@ -3,7 +3,7 @@ import Head from "next/head";
 
 import { useMemo, type FC, useState } from "react";
 import { useGPUDevice } from "~/webgpu/gpu-device";
-import { useComputePipeline, useShaderModule } from "~/webgpu/shader";
+import { useComputePipeline, useShaderModule } from "~/webgpu/resources";
 import { computePass, immediateRenderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { useAsyncAction, useMemoBag } from "~/utils/hooks";

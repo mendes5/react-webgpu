@@ -5,7 +5,13 @@ import { type FC, useState } from "react";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import { usePipeline, useSampler, useShaderModule } from "~/webgpu/shader";
+import {
+  useAsyncExternalTexture,
+  useExternalTexture,
+  usePipeline,
+  useSampler,
+  useShaderModule,
+} from "~/webgpu/resources";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
@@ -77,32 +83,9 @@ const Example: FC = () => {
   const [magFilter, setMagFilter] = useState<string>(FilterMode.nearest);
   const [minFilter, setMingFilter] = useState<string>(FilterMode.nearest);
 
-  const textureState = useAsyncResource(async () => {
-    if (!device) return Promise.reject();
-
-    const url = "/resources/f-texture.png";
-    const source = await loadImageBitmap(url);
-
-    const texture = device.createTexture({
-      label: url,
-      format: "rgba8unorm",
-      size: [source.width, source.height],
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_DST |
-        // for some reason RENDER_ATTACHMENT
-        // not sure why since we are not rendering shit
-        GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    device.queue.copyExternalImageToTexture(
-      { source, flipY: true },
-      { texture },
-      { width: source.width, height: source.height }
-    );
-
-    return { texture };
-  }, [device]);
+  const texture = useAsyncExternalTexture("/resources/f-texture.png", {
+    flipY: true,
+  });
 
   const { uniformBuffer, uniformValues, kScaleOffset, kOffsetOffset } =
     useMemoBag(
@@ -138,14 +121,14 @@ const Example: FC = () => {
 
   const { bindGroup } =
     useMemoBag(
-      { device, pipeline, sampler, uniformBuffer },
-      ({ device, pipeline, sampler, uniformBuffer }) => {
-        if (textureState.type === "success") {
+      { device, texture, pipeline, sampler, uniformBuffer },
+      ({ device, texture, pipeline, sampler, uniformBuffer }) => {
+        if (texture) {
           const bindGroup = device.createBindGroup({
             layout: pipeline.getBindGroupLayout(0),
             entries: [
               { binding: 0, resource: sampler },
-              { binding: 1, resource: textureState.value.texture.createView() },
+              { binding: 1, resource: texture.createView() },
               { binding: 2, resource: { buffer: uniformBuffer } },
             ],
           });
@@ -155,7 +138,7 @@ const Example: FC = () => {
           return { bindGroup: null };
         }
       },
-      [sampler, uniformBuffer, textureState]
+      [sampler, uniformBuffer]
     ) ?? {};
 
   const canvas = useWebGPUCanvas();

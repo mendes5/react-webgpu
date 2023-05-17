@@ -5,7 +5,7 @@ import { type FC } from "react";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import { usePipeline, useShaderModule } from "~/webgpu/shader";
+import { usePipeline, useShaderModule } from "~/webgpu/resources";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";

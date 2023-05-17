@@ -28,3 +28,5 @@ export const hashed = <T extends object>(value: T): H<T> => {
 };
 
 export const shortId = (id: string) => id.slice(0, 6);
+
+export const NOOP = (): void => undefined;

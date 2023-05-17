@@ -12,7 +12,7 @@ import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import { usePipeline, useShaderModule } from "~/webgpu/shader";
+import { usePipeline, useShaderModule } from "~/webgpu/resources";
 
 const Example: FC = () => {
   const device = useGPUDevice();

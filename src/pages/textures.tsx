@@ -1,11 +1,16 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { type FC, useState, useRef } from "react";
+import { type FC, useState, useRef, useMemo } from "react";
 import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import { usePipeline, useSampler, useShaderModule } from "~/webgpu/shader";
+import {
+  useDataTexture,
+  usePipeline,
+  useSampler,
+  useShaderModule,
+} from "~/webgpu/resources";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
@@ -77,18 +82,15 @@ const Example: FC = () => {
   const [minFilter, setMingFilter] = useState<string>(FilterMode.nearest);
   const scaleRef = useRef(1);
 
-  const { texture } =
-    useMemoBag(
-      { device },
-      ({ device }) => {
-        const kTextureWidth = 5;
-        const kTextureHeight = 7;
-        const _ = [255, 0, 0, 255]; // red
-        const y = [255, 255, 0, 255]; // yellow
-        const b = [0, 0, 255, 255]; // blue
+  const { textureData, kTextureWidth, kTextureHeight } = useMemo(() => {
+    const kTextureWidth = 5;
+    const kTextureHeight = 7;
+    const _ = [255, 0, 0, 255]; // red
+    const y = [255, 255, 0, 255]; // yellow
+    const b = [0, 0, 255, 255]; // blue
 
-        // prettier-ignore
-        const textureData = new Uint8Array([   
+    // prettier-ignore
+    const textureData = new Uint8Array([   
       _, _, _, _, _,
       _, y, _, _, _,
       _, y, _, _, _,
@@ -98,23 +100,10 @@ const Example: FC = () => {
       b, _, _, _, _,
     ].flat());
 
-        const texture = device.createTexture({
-          size: [kTextureWidth, kTextureHeight],
-          format: "rgba8unorm",
-          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-        });
+    return { textureData, kTextureWidth, kTextureHeight };
+  }, []);
 
-        device.queue.writeTexture(
-          { texture },
-          textureData,
-          { bytesPerRow: kTextureWidth * 4 },
-          { width: kTextureWidth, height: kTextureHeight }
-        );
-
-        return { texture };
-      },
-      [device]
-    ) ?? {};
+  const [texture] = useDataTexture(textureData, kTextureWidth, kTextureHeight);
 
   const { uniformBuffer, uniformValues, kScaleOffset, kOffsetOffset } =
     useMemoBag(
