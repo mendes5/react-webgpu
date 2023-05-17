@@ -2,19 +2,12 @@ import { useCallback, useId, useMemo, useRef } from "react";
 import { useGPUDevice } from "./gpu-device";
 import stringHash from "string-hash";
 import { usePresentationFormat } from "./canvas";
-import {
-  AsyncState,
-  useAsyncResource,
-  useMemoBag,
-  useV,
-  type V,
-} from "~/utils/hooks";
+import { useAsyncResource, useMemoBag, type V } from "~/utils/hooks";
 import { type H, hashed, shortId, NOOP } from "~/utils/other";
 import { log } from "./logger";
 import { numMipLevels } from "~/utils/mips";
 import { useWithMips } from "./gpu-mipmap";
 import { loadImageBitmap } from "~/utils/mips";
-import { match } from "ts-pattern";
 
 const SAMPLER_CACHE: Map<GPUDevice, Map<string, H<GPUSampler>>> = new Map();
 
@@ -121,9 +114,9 @@ export const usePipeline = (
 
   const format = targetFormat ?? presentationFormat;
 
-  const key = `${ready}/${shader?.instanceId ?? ""}/${
+  const key = `${String(ready) ?? ""}/${shader?.instanceId ?? ""}/${
     buffers?.useVersionCacheBurstId ?? ""
-  }/${presentationFormat}`;
+  }/${presentationFormat ?? ""}`;
 
   return useDeviceCache(
     key,
@@ -188,7 +181,9 @@ export const useSampler = ({
   magFilter?: GPUFilterMode;
   minFilter?: GPUFilterMode;
 }) => {
-  const key = `${addressModeU}/${addressModeV}/${magFilter}/${minFilter}`;
+  const key = `${addressModeU ?? ""}/${addressModeV ?? ""}/${magFilter ?? ""}/${
+    minFilter ?? ""
+  }`;
   return useDeviceCache(
     key,
     (device) => {
@@ -372,7 +367,7 @@ export const useDataTexture = (
     texture,
     useCallback(
       (data: BufferSource | SharedArrayBuffer) => updateTexture.current(data),
-      [texture]
+      []
     ),
   ] as const;
 };
