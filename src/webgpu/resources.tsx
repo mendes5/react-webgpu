@@ -202,6 +202,13 @@ export const useSampler = ({
   );
 };
 
+const getSourceSize = (source: GPUImageCopyExternalImage["source"]) => {
+  if (source instanceof HTMLVideoElement) {
+    return [source.videoWidth - 1, source.videoHeight - 1] as const;
+  }
+  return [source.width, source.height];
+};
+
 export const useExternalTexture = (
   source?: GPUImageCopyExternalImage["source"] | null,
   {
@@ -227,11 +234,13 @@ export const useExternalTexture = (
         lastInstance.current.destroy();
       }
 
+      const size = getSourceSize(source);
+
       const texture = hashed(
         device.createTexture({
           format: format ?? "rgba8unorm",
-          mipLevelCount: mips ? numMipLevels(source.width, source.height) : 1,
-          size: [source.width, source.height],
+          mipLevelCount: mips ? numMipLevels(...size) : 1,
+          size,
           usage:
             GPUTextureUsage.TEXTURE_BINDING |
             GPUTextureUsage.COPY_DST |
@@ -258,10 +267,11 @@ export const useExternalTexture = (
     { device, source, texture },
     ({ device, source, texture }) => {
       updateCallback.current = () => {
+        const size = getSourceSize(source);
         device.queue.copyExternalImageToTexture(
           { source, flipY },
           { texture },
-          { width: source.width, height: source.height }
+          { width: size[0], height: size[1] }
         );
 
         if (texture.mipLevelCount > 1) {

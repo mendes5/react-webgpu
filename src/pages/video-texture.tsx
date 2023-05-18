@@ -41,15 +41,12 @@ const Example: FC = () => {
       
       @vertex fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> OurVertexShaderOutput {
         var pos = array<vec2f, 6>(
-          // 1st triangle
-          vec2f( 0.0,  0.0),  // center
-          vec2f( 1.0,  0.0),  // right, center
-          vec2f( 0.0,  1.0),  // center, top
-        
-          // 2st triangle
-          vec2f( 0.0,  1.0),  // center, top
-          vec2f( 1.0,  0.0),  // right, center
-          vec2f( 1.0,  1.0),  // right, top
+          vec2f( 0.0,  0.0),
+          vec2f( 1.0,  0.0),
+          vec2f( 0.0,  1.0),
+          vec2f( 0.0,  1.0),
+          vec2f( 1.0,  0.0),
+          vec2f( 1.0,  1.0),
         );
 
         var vsOutput: OurVertexShaderOutput;
@@ -84,17 +81,13 @@ const Example: FC = () => {
       video.muted = true;
       video.loop = true;
       video.preload = "auto";
+      video.autoplay = true;
       video.src =
-        "https://webgpufundamentals.org/webgpu/resources/videos/Golden_retriever_swimming_the_doggy_paddle-360-no-audio.webm";
+        "/resources/Golden_retriever_swimming_the_doggy_paddle-360-no-audio.webm";
+      video.style.display = "none";
       document.body.appendChild(video);
       dispose(() => {
         document.body.removeChild(video);
-      });
-      await new Promise<void>((res) => {
-        canvas.onclick = () => {
-          res();
-          video.play().catch(console.error);
-        };
       });
       await startPlayingAndWaitForVideo(video);
       return { video };
@@ -104,7 +97,7 @@ const Example: FC = () => {
 
   const [texture, updateTexture] = useExternalTexture(
     videoState.type === "success" ? videoState.value.video : null,
-    { mips: true }
+    { mips: false }
   );
 
   const { objectInfos } =
@@ -118,20 +111,15 @@ const Example: FC = () => {
             const sampler = device.createSampler({
               addressModeU: "repeat",
               addressModeV: "repeat",
-              magFilter: i & 1 ? "linear" : "nearest",
-              minFilter: i & 2 ? "linear" : "nearest",
-              mipmapFilter: i & 4 ? "linear" : "nearest",
             });
 
-            // create a buffer for the uniform values
-            const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
+            const uniformBufferSize = 16 * 4;
             const uniformBuffer = device.createBuffer({
               label: "uniforms for quad",
               size: uniformBufferSize,
               usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
-            // create a typedarray to hold the values for the uniforms in JavaScript
             const uniformValues = new Float32Array(uniformBufferSize / 4);
             const matrix = uniformValues.subarray(kMatrixOffset, 16);
 
@@ -144,7 +132,6 @@ const Example: FC = () => {
               ],
             });
 
-            // Save the data we need to render this object.
             objectInfos.push({
               bindGroup,
               matrix,
@@ -178,7 +165,7 @@ const Example: FC = () => {
 
       immediateRenderPass(device, "triangle encoder", (encoder) => {
         renderPass(encoder, renderPassDescriptor, (pass) => {
-          const fov = (60 * Math.PI) / 180; // 60 degrees in radians
+          const fov = (60 * Math.PI) / 180;
           const aspect = canvas.clientWidth / canvas.clientHeight;
           const zNear = 1;
           const zFar = 2000;
@@ -215,11 +202,10 @@ const Example: FC = () => {
               mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
               mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
 
-              // copy the values from JavaScript to the GPU
               device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
               pass.setBindGroup(0, bindGroup);
-              pass.draw(6); // call our vertex shader 6 times
+              pass.draw(6);
             }
           );
         });

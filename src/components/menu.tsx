@@ -14,7 +14,7 @@ const links = [
   { href: "/vertex-buffers", label: "Vertex Buffers" },
   { href: "/index-buffers", label: "Index Buffers" },
   { href: "/vertex-buffers-separate", label: "Vertex Buffers Separate" },
-  { href: "/video-texture", label: "Video Texture (Broken)" },
+  { href: "/video-texture", label: "Video Texture" },
 ];
 
 export const Menu = () => {
