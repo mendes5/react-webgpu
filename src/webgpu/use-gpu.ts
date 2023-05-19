@@ -242,7 +242,6 @@ export function useGPU<
                   // @ts-ignore
                   if (
                     value &&
-                    typeof value === value &&
                     typeof value === "object" &&
                     "instanceId" in value
                   ) {
@@ -412,7 +411,7 @@ export function useGPU<
           log(
             `Destroyed buffer ${shortId(
               fromCache.instanceId
-            )} (key: ${resource}) on instance ${id}, unused.`
+            )} on instance ${id}, unused.`
           );
           fromCache.destroy();
         });

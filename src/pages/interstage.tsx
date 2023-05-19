@@ -2,15 +2,15 @@ import { type NextPage } from "next";
 import Head from "next/head";
 
 import { useState, type FC } from "react";
-import { useWebGPUContext } from "~/webgpu/canvas";
+import { usePresentationFormat, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import { usePipeline, useShaderModule } from "~/webgpu/resources";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { useToggle } from "usehooks-ts";
 import { ToOverlay } from "~/utils/overlay";
 import { match } from "ts-pattern";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const InterpolationType = {
   /**
@@ -64,117 +64,127 @@ const Example: FC = () => {
       .with("flat", (type) => type)
       .otherwise(() => `${type}, ${sampling}`);
 
-  /**
-   * In case this is not clear.
-   *
-   * The rgb shader has its parameters changed by dynamically
-   * recompiling the shader, since `formatInterpolation` returns different
-   * values, the string hash differs, and a new shader is created/cached.
-   *
-   * While still being 100% declarative, its just
-   *  * useShaderModule
-   *  * usePipeline
-   *  * useFrame
-   * calls with react using reactiviy to controll them
-   * the rendering still happens at native requestAnimationFrame speeds
-   */
-  const shader = useShaderModule(
-    value
-      ? /* wgsl */ `
-        struct OurVertexShaderOutput {
-          // Note @builtin(position) is accessible in the 
-          // vertex shader too, so you can either access fsInput.position
-          // or @builtin(position) direclty
-          @builtin(position) position: vec4f,
+  const presentationFormat = usePresentationFormat();
 
-          // Note that if the inter-stage variable is an integer type then you must set its interpolation to flat.
-          // @location(2) @interpolate(linear, center) myVariableFoo: vec4f;
-          @location(0) @interpolate(${formatInterpolation(
-            type,
-            sampling
-          )}) color: vec4f,
-        };
-        
-        // this shader will be invoked 3 times
-        // since we called pass.draw(3);
-        // with it, each time vsMain is called
-        // @builtin(vertex_index)
-        // changes with the vertext id 
-        @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> OurVertexShaderOutput {
-          var pos = array<vec2f, 3>(
-            vec2f( 0.0,  0.5),  // top center
-            vec2f(-0.5, -0.5),  // bottom left
-            vec2f( 0.5, -0.5)   // bottom right
-          );
-          var color = array<vec4f, 3>(
-            vec4f(1, 0, 0, 1), // red
-            vec4f(0, 1, 0, 1), // green
-            vec4f(0, 0, 1, 1), // blue
-          );
-          var vsOutput: OurVertexShaderOutput;
-            vsOutput.position = vec4f(pos[vertexIndex], 0.0, 1.0);
-            vsOutput.color = color[vertexIndex];
-            return vsOutput;
-        }
+  const { pipeline } = useGPU(
+    { presentationFormat },
+    (gpu, { presentationFormat }) => {
+      const shader = gpu.createShaderModule({
+        label: "rgb  triangle shader",
+        code: value
+          ? /* wgsl */ `
+            struct OurVertexShaderOutput {
+              // Note @builtin(position) is accessible in the 
+              // vertex shader too, so you can either access fsInput.position
+              // or @builtin(position) direclty
+              @builtin(position) position: vec4f,
+    
+              // Note that if the inter-stage variable is an integer type then you must set its interpolation to flat.
+              // @location(2) @interpolate(linear, center) myVariableFoo: vec4f;
+              @location(0) @interpolate(${formatInterpolation(
+                type,
+                sampling
+              )}) color: vec4f,
+            };
+            
+            // this shader will be invoked 3 times
+            // since we called pass.draw(3);
+            // with it, each time vsMain is called
+            // @builtin(vertex_index)
+            // changes with the vertext id 
+            @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> OurVertexShaderOutput {
+              var pos = array<vec2f, 3>(
+                vec2f( 0.0,  0.5),  // top center
+                vec2f(-0.5, -0.5),  // bottom left
+                vec2f( 0.5, -0.5)   // bottom right
+              );
+              var color = array<vec4f, 3>(
+                vec4f(1, 0, 0, 1), // red
+                vec4f(0, 1, 0, 1), // green
+                vec4f(0, 0, 1, 1), // blue
+              );
+              var vsOutput: OurVertexShaderOutput;
+                vsOutput.position = vec4f(pos[vertexIndex], 0.0, 1.0);
+                vsOutput.color = color[vertexIndex];
+                return vsOutput;
+            }
+    
+            // The @location(0) can mean different things based of 
+            // where they are used
+            // if it is used between an vertex shader and fragment shader
+            // the data in the location will be interpolated
+            // if it is used as the output of the fragment shader
+            // the computed result will be placed into the view at location(0)
+    
+            // interpolation settings must be the same
+            @fragment fn fsMain(@location(0) @interpolate(${formatInterpolation(
+              type,
+              sampling
+            )}) color: vec4f) -> @location(0) vec4f {
+              return color;
+            }
+    
+            // Thats why this shader works too
+            // we can either receive the full OurVertexShaderOutput since it is
+            // the output of the vertex shader
+            // or specific data by referencing locations manually
+            // It probably doesn't has any benefits tough since the data is already
+            // tightly packed, so this is mostly a convenience
+            // @fragment fn fsMain(fsInput: OurVertexShaderOutput) -> @location(0) vec4f {
+            //   return fsInput.color;
+            // }
+          `
+          : /* wgsl */ `
+            struct OurVertexShaderOutput {
+              @builtin(position) position: vec4f,
+            };
+            
+            @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> OurVertexShaderOutput {
+              var pos = array<vec2f, 3>(
+                vec2f( 0.0,  1.5),  // top center
+                vec2f(-0.5, -0.5),  // bottom left
+                vec2f( 0.5, -0.5)   // bottom right
+              );
+              var vsOutput: OurVertexShaderOutput;
+                vsOutput.position = vec4f(pos[vertexIndex], 0.0, 1.0);
+                return vsOutput;
+            }
+    
+            @fragment fn fsMain(fsInput: OurVertexShaderOutput) -> @location(0) vec4f {
+              let red = vec4f(1, 0, 0, 1);
+              let cyan = vec4f(0, 1, 1, 1);
+    
+              let grid = vec2u(fsInput.position.xy) / 100;
+              let checker = (grid.x + grid.y) % 2 == 1;
+    
+              return select(red, cyan, checker);
+            }
+      `,
+      });
 
-        // The @location(0) can mean different things based of 
-        // where they are used
-        // if it is used between an vertex shader and fragment shader
-        // the data in the location will be interpolated
-        // if it is used as the output of the fragment shader
-        // the computed result will be placed into the view at location(0)
+      const pipeline = gpu.createRenderPipeline({
+        label: "Main render pipeline",
+        layout: "auto",
+        vertex: {
+          module: shader,
+          buffers: [],
+          entryPoint: "vsMain",
+        },
+        fragment: {
+          module: shader,
+          entryPoint: "fsMain",
+          targets: [{ format: presentationFormat }],
+        },
+      });
 
-        // interpolation settings must be the same
-        @fragment fn fsMain(@location(0) @interpolate(${formatInterpolation(
-          type,
-          sampling
-        )}) color: vec4f) -> @location(0) vec4f {
-          return color;
-        }
-
-        // Thats why this shader works too
-        // we can either receive the full OurVertexShaderOutput since it is
-        // the output of the vertex shader
-        // or specific data by referencing locations manually
-        // It probably doesn't has any benefits tough since the data is already
-        // tightly packed, so this is mostly a convenience
-        // @fragment fn fsMain(fsInput: OurVertexShaderOutput) -> @location(0) vec4f {
-        //   return fsInput.color;
-        // }
-      `
-      : /* wgsl */ `
-        struct OurVertexShaderOutput {
-          @builtin(position) position: vec4f,
-        };
-        
-        @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> OurVertexShaderOutput {
-          var pos = array<vec2f, 3>(
-            vec2f( 0.0,  1.5),  // top center
-            vec2f(-0.5, -0.5),  // bottom left
-            vec2f( 0.5, -0.5)   // bottom right
-          );
-          var vsOutput: OurVertexShaderOutput;
-            vsOutput.position = vec4f(pos[vertexIndex], 0.0, 1.0);
-            return vsOutput;
-        }
-
-        @fragment fn fsMain(fsInput: OurVertexShaderOutput) -> @location(0) vec4f {
-          let red = vec4f(1, 0, 0, 1);
-          let cyan = vec4f(0, 1, 1, 1);
-
-          let grid = vec2u(fsInput.position.xy) / 100;
-          let checker = (grid.x + grid.y) % 2 == 1;
-
-          return select(red, cyan, checker);
-        }
-  `,
-    "rgb  triangle shader"
+      return { pipeline };
+    },
+    [value, type, sampling]
   );
 
   /**
    * Pipeline will be recreated if the shader changes
    */
-  const pipeline = usePipeline(shader, "Main render pipeline");
 
   const device = useGPUDevice();
   const context = useWebGPUContext();
