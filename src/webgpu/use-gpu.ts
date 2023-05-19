@@ -26,29 +26,29 @@ type NoUndefinedField<T> = {
   [P in keyof T]-?: NonNullable<T[P]>;
 };
 
-export const useGPU = <
+type GPU_API = {
+  createBuffer: (desc: GPUBufferDescriptor) => H<GPUBuffer>;
+  createTexture: (desc: GPUTextureDescriptor) => H<GPUTexture>;
+  createShaderModule: (desc: GPUShaderModuleDescriptor) => H<GPUShaderModule>;
+  createRenderPipeline: (
+    desc: GPURenderPipelineDescriptor
+  ) => H<GPURenderPipeline>;
+  createComputePipeline: (
+    desc: GPUComputePipelineDescriptor
+  ) => H<GPUComputePipeline>;
+};
+
+export function useGPU<
   T extends Record<string, unknown | null | undefined>,
   R extends Record<string, unknown>
 >(
   bag: T,
   callback: (
-    gpu: {
-      createBuffer: (desc: GPUBufferDescriptor) => H<GPUBuffer>;
-      createTexture: (desc: GPUTextureDescriptor) => H<GPUTexture>;
-      createShaderModule: (
-        desc: GPUShaderModuleDescriptor
-      ) => H<GPUShaderModule>;
-      createRenderPipeline: (
-        desc: GPURenderPipelineDescriptor
-      ) => H<GPURenderPipeline>;
-      createComputePipeline: (
-        desc: GPUComputePipelineDescriptor
-      ) => H<GPUComputePipeline>;
-    },
-    bag: NoUndefinedField<T>
+    gpu: GPU_API,
+    bag: NoUndefinedField<T> & { device: GPUDevice }
   ) => R,
   deps: unknown[]
-): Partial<R> => {
+): Partial<R> {
   const id = useId();
   const device = useGPUDevice();
 
@@ -63,7 +63,9 @@ export const useGPU = <
       if (currentBuffersRef.current?.size) {
         for (const buffer of currentBuffersRef.current.values()) {
           log(
-            `Destroying buffer ${shortId(buffer.instanceId)} of instance ${id}`
+            `Destroying buffer ${shortId(
+              buffer.instanceId
+            )} of instance ${id}, unmount`
           );
           buffer.destroy();
         }
@@ -74,14 +76,14 @@ export const useGPU = <
           log(
             `Destroying texture ${shortId(
               texture.instanceId
-            )} of instance ${id}`
+            )} of instance ${id}, unmount`
           );
           texture.destroy();
         }
         currentTexturesRef.current.clear();
       }
     },
-    [device]
+    []
   );
 
   return (
@@ -95,7 +97,9 @@ export const useGPU = <
           currentTexturesRef.current = new Map();
         }
 
-        if (!device) return {};
+        if (!device) {
+          return {};
+        }
 
         const unusedBuffers = new Set([...currentBuffersRef.current.keys()]);
         const unusedTextures = new Set([...currentTexturesRef.current.keys()]);
@@ -105,20 +109,23 @@ export const useGPU = <
             createBuffer: (desc: GPUBufferDescriptor) => {
               if (!currentBuffersRef.current) throw new Error("Unreachable");
 
-              const key = hash(desc, {
-                replacer: (value: unknown) => {
-                  // eslint-disable-next-line
-                  // @ts-ignore
-                  if (
-                    value &&
-                    typeof value === "object" &&
-                    "instanceId" in value
-                  ) {
-                    return value.instanceId;
-                  }
-                  return value;
-                },
-              });
+              const key = hash(
+                Object.assign(desc, { owningDevice: device.instanceId }),
+                {
+                  replacer: (value: unknown) => {
+                    // eslint-disable-next-line
+                    // @ts-ignore
+                    if (
+                      value &&
+                      typeof value === "object" &&
+                      "instanceId" in value
+                    ) {
+                      return value.instanceId;
+                    }
+                    return value;
+                  },
+                }
+              );
 
               const existing = currentBuffersRef.current.get(key);
 
@@ -142,20 +149,23 @@ export const useGPU = <
             createTexture: (desc: GPUTextureDescriptor) => {
               if (!currentTexturesRef.current) throw new Error("Unreachable");
 
-              const key = hash(desc, {
-                replacer: (value: unknown) => {
-                  // eslint-disable-next-line
-                  // @ts-ignore
-                  if (
-                    value &&
-                    typeof value === "object" &&
-                    "instanceId" in value
-                  ) {
-                    return value.instanceId;
-                  }
-                  return value;
-                },
-              });
+              const key = hash(
+                Object.assign(desc, { owningDevice: device.instanceId }),
+                {
+                  replacer: (value: unknown) => {
+                    // eslint-disable-next-line
+                    // @ts-ignore
+                    if (
+                      value &&
+                      typeof value === "object" &&
+                      "instanceId" in value
+                    ) {
+                      return value.instanceId;
+                    }
+                    return value;
+                  },
+                }
+              );
 
               const existing = currentTexturesRef.current.get(key);
 
@@ -362,7 +372,7 @@ export const useGPU = <
             deviceAPI.current.createSampler(desc),
         };
 
-        const out = callbackRef.current(callbacks, bag);
+        const out = callbackRef.current(callbacks, { ...bag, device });
 
         deviceAPI.current.createBuffer = () => {
           throw new Error(
@@ -425,7 +435,7 @@ export const useGPU = <
 
         return out;
       },
-      deps
+      [...deps, device]
     ) ?? {}
   );
-};
+}
