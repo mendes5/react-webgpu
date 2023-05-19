@@ -54,7 +54,7 @@ const Example: FC = () => {
       device.queue.writeBuffer(workBuffer, 0, input);
 
       const resultBuffer = createBuffer({
-        label: `result ${label} buffer`,
+        label: `result ${String(label)} buffer`,
         size: input.byteLength,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
       });
