@@ -1,7 +1,7 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useState, type FC } from "react";
+import { useState, type FC, useRef } from "react";
 import { usePresentationFormat, useWebGPUContext } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
@@ -65,10 +65,14 @@ const Example: FC = () => {
       .otherwise(() => `${type}, ${sampling}`);
 
   const presentationFormat = usePresentationFormat();
+  const frameRef = useRef<(frame: number) => void>();
 
-  const { pipeline } = useGPU(
-    { presentationFormat },
-    (gpu, { presentationFormat }) => {
+  const device = useGPUDevice();
+  const context = useWebGPUContext();
+
+  useGPU(
+    { presentationFormat, device },
+    (gpu, { presentationFormat, device }) => {
       const shader = gpu.createShaderModule({
         label: "rgb  triangle shader",
         code: value
@@ -76,7 +80,7 @@ const Example: FC = () => {
             struct OurVertexShaderOutput {
               // Note @builtin(position) is accessible in the 
               // vertex shader too, so you can either access fsInput.position
-              // or @builtin(position) direclty
+              // or @builtin(position) directly
               @builtin(position) position: vec4f,
     
               // Note that if the inter-stage variable is an integer type then you must set its interpolation to flat.
@@ -91,7 +95,7 @@ const Example: FC = () => {
             // since we called pass.draw(3);
             // with it, each time vsMain is called
             // @builtin(vertex_index)
-            // changes with the vertext id 
+            // changes with the vertex id 
             @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> OurVertexShaderOutput {
               var pos = array<vec2f, 3>(
                 vec2f( 0.0,  0.5),  // top center
@@ -177,42 +181,35 @@ const Example: FC = () => {
         },
       });
 
-      return { pipeline };
+      frameRef.current = () => {
+        const renderPassDescriptor: GPURenderPassDescriptor = {
+          label: "our basic canvas  renderPass",
+          colorAttachments: [
+            // This is the location(0)
+            // since we use context.getCurrentTexture as the view
+            // it will render to the canvas
+            {
+              view: context.getCurrentTexture().createView(),
+              clearValue: [0.0, 0.0, 0.0, 1],
+              loadOp: "clear",
+              storeOp: "store",
+            },
+          ],
+        };
+
+        immediateRenderPass(device, "triangle encoder", (encoder) => {
+          renderPass(encoder, renderPassDescriptor, (pass) => {
+            pass.setPipeline(pipeline);
+            pass.draw(3);
+          });
+        });
+      };
     },
     [value, type, sampling]
   );
 
-  /**
-   * Pipeline will be recreated if the shader changes
-   */
-
-  const device = useGPUDevice();
-  const context = useWebGPUContext();
-
-  useFrame(() => {
-    if (device && pipeline) {
-      const renderPassDescriptor: GPURenderPassDescriptor = {
-        label: "our basic canvas  renderPass",
-        colorAttachments: [
-          // This is the location(0)
-          // since we use context.getCurrentTexture as the view
-          // it will render to the canvas
-          {
-            view: context.getCurrentTexture().createView(),
-            clearValue: [0.0, 0.0, 0.0, 1],
-            loadOp: "clear",
-            storeOp: "store",
-          },
-        ],
-      };
-
-      immediateRenderPass(device, "triangle encoder", (encoder) => {
-        renderPass(encoder, renderPassDescriptor, (pass) => {
-          pass.setPipeline(pipeline);
-          pass.draw(3);
-        });
-      });
-    }
+  useFrame((time) => {
+    frameRef.current?.(time);
   });
 
   return (

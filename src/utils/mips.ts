@@ -105,8 +105,8 @@ export function getSourceSize(source: GPUImageCopyExternalImage["source"]) {
     return [
       source.videoWidth || source.width,
       source.videoHeight || source.height,
-    ];
+    ] as const;
   }
 
-  return [source.width, source.height];
+  return [source.width, source.height] as const;
 }

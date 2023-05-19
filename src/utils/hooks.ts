@@ -9,7 +9,7 @@ import {
 import { useEffect, useRef } from "react";
 import { useCounter, useIsMounted } from "usehooks-ts";
 import { log } from "~/webgpu/logger";
-import { type H } from "./other";
+import { NOOP, type H } from "./other";
 
 const GLOBAL_VERSION = {
   v: 0,
@@ -234,6 +234,25 @@ export const useMemoBag = <
     }
 
     return null;
+  }, [...Object.values(bag), ...deps]);
+};
+
+export const useEffectBag = <
+  T extends Record<string, unknown | null | undefined>
+>(
+  bag: T,
+  builder: (bag: NoUndefinedField<T>) => (() => void) | void,
+  noBag: () => (() => void) | void,
+  deps: unknown[]
+) => {
+  useEffect(() => {
+    const hasInvalidValues = Object.values(bag).includes(null);
+
+    if (!hasInvalidValues) {
+      return builder(bag as NoUndefinedField<T>);
+    } else {
+      return noBag();
+    }
   }, [...Object.values(bag), ...deps]);
 };
 
