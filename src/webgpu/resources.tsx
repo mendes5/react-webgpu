@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useRef } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef } from "react";
 import { useGPUDevice } from "./gpu-device";
 import stringHash from "string-hash";
 import { usePresentationFormat } from "./canvas";
@@ -381,3 +381,136 @@ export const useDataTexture = (
     ),
   ] as const;
 };
+
+type NoUndefinedField<T> = {
+  [P in keyof T]-?: NonNullable<T[P]>;
+};
+
+/**
+ * NOTE: will never transfer data to new buffers upon
+ * new buffer initialization, if the buffers managed
+ * by this hook are re-built.
+ *
+ * The lib also don't track any GPU related state
+ * so even on cases of GPU device lost where the
+ * buffer signature didn't change you won't get
+ * your data back.
+ *
+ * Also note: the double render you get on dev mode
+ * is not a bug, its React strict mode.
+ */
+export const useBuffers = <
+  T extends Record<string, unknown | null | undefined>,
+  R extends {}
+>(
+  bag: T,
+  callback: (
+    createBuffer: (desc: GPUBufferDescriptor) => H<GPUBuffer>,
+    bag: NoUndefinedField<T>
+  ) => R,
+  deps: unknown[]
+): Partial<R> => {
+  const device = useGPUDevice();
+
+  const currentBuffersRef = useRef<Set<H<GPUBuffer>>>();
+
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+
+  const id = useId();
+
+  useEffect(
+    () => () => {
+      if (currentBuffersRef.current?.size) {
+        for (const buffer of currentBuffersRef.current.values()) {
+          log(
+            `Destroying buffer ${shortId(buffer.instanceId)} of instance ${id}`
+          );
+          buffer.destroy();
+        }
+        currentBuffersRef.current.clear();
+      }
+    },
+    []
+  );
+
+  return (
+    useMemoBag(
+      bag,
+      (bag) => {
+        if (!currentBuffersRef.current) {
+          currentBuffersRef.current = new Set();
+        }
+
+        if (currentBuffersRef.current.size) {
+          for (const buffer of currentBuffersRef.current.values()) {
+            log(
+              `Destroying buffer ${shortId(
+                buffer.instanceId
+              )} of instance ${id}`
+            );
+            buffer.destroy();
+          }
+          currentBuffersRef.current.clear();
+        }
+
+        if (!device) return {};
+
+        const ref = {
+          current: (desc: GPUBufferDescriptor): H<GPUBuffer> => {
+            // TODO: compute structure hash and use it to decide if
+            // we delete previous buffers or not
+            //
+            // deleting all buffers on a re-render is silly
+            // but works for now
+            //
+            // maybe we can even key/reconcile those calls
+            // instead of doing hashes.
+            const buffer = hashed(device.createBuffer(desc));
+            log(
+              `Created buffer ${shortId(buffer.instanceId)} for instance ${id}`
+            );
+            currentBuffersRef.current?.add(buffer);
+            return buffer;
+          },
+        };
+
+        const createBufferCb = (desc: GPUBufferDescriptor) => ref.current(desc);
+
+        const out = callbackRef.current(createBufferCb, bag);
+
+        ref.current = () => {
+          throw new Error(
+            "Cannot call createBuffer outside the rendering of useBuffers"
+          );
+        };
+
+        return out;
+      },
+      deps
+    ) ?? {}
+  );
+};
+
+/**
+ * Idea: A `useGPU` hook:
+ *
+ * const { pipeline, buffer, shader } = useGPU(({ createBuffer, createTexture }) => {
+ *   // block
+ * })
+ *
+ * Kinda like this useBuffer but for everything, auto manages/reconcile the used resources
+ * based on structural hashes of the descriptors/call orders of the created resources.
+ *
+ * Kinda like a render, but imperative
+ * all code ran inside // block should pass
+ * trough our own reconciler, like we did
+ * with DRER-rs last year.
+ *
+ * Also solves the problem of re-rendering recreating resources
+ * without needing, and you can return more stuff from the bag
+ * AND you also solve the optional device issue.
+ *
+ * Looks like a cool API and is a nice way to hide the GPU device, that I want to become
+ * private anyways...
+ */

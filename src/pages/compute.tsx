@@ -3,11 +3,16 @@ import Head from "next/head";
 
 import { useMemo, type FC, useState } from "react";
 import { useGPUDevice } from "~/webgpu/gpu-device";
-import { useComputePipeline, useShaderModule } from "~/webgpu/resources";
+import {
+  useBuffers,
+  useComputePipeline,
+  useShaderModule,
+} from "~/webgpu/resources";
 import { computePass, immediateRenderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { useAsyncAction, useMemoBag } from "~/utils/hooks";
 import { ToOverlay } from "~/utils/overlay";
+import { useToggle } from "usehooks-ts";
 
 const Example: FC = () => {
   const entireShaderApparently = useShaderModule(
@@ -33,36 +38,37 @@ const Example: FC = () => {
 
   const input = useMemo(() => new Float32Array([1, 3, 5, 5, 9, 7, 4, 5]), []);
 
-  const { resultBuffer, bindGroup, workBuffer } =
-    useMemoBag(
-      { device, pipeline },
-      ({ device, pipeline }) => {
-        const workBuffer = device.createBuffer({
-          label: "work buffer",
-          size: input.byteLength,
-          usage:
-            GPUBufferUsage.STORAGE |
-            GPUBufferUsage.COPY_SRC |
-            GPUBufferUsage.COPY_DST,
-        });
-        device.queue.writeBuffer(workBuffer, 0, input);
+  const [label, toggleLabel] = useToggle();
 
-        const resultBuffer = device.createBuffer({
-          label: "result buffer",
-          size: input.byteLength,
-          usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-        });
+  const { resultBuffer, workBuffer, bindGroup } = useBuffers(
+    { device, pipeline },
+    (createBuffer, { device, pipeline }) => {
+      const workBuffer = createBuffer({
+        label: "work buffer",
+        size: input.byteLength,
+        usage:
+          GPUBufferUsage.STORAGE |
+          GPUBufferUsage.COPY_SRC |
+          GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(workBuffer, 0, input);
 
-        const bindGroup = device.createBindGroup({
-          label: "bindGroup for work buffer",
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [{ binding: 0, resource: { buffer: workBuffer } }],
-        });
+      const resultBuffer = createBuffer({
+        label: `result ${label} buffer`,
+        size: input.byteLength,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+      });
 
-        return { resultBuffer, bindGroup, workBuffer };
-      },
-      [input]
-    ) ?? {};
+      const bindGroup = device.createBindGroup({
+        label: "bindGroup for work buffer",
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: { buffer: workBuffer } }],
+      });
+
+      return { resultBuffer, workBuffer, bindGroup };
+    },
+    [label]
+  );
 
   const { execute, locked } = useAsyncAction(
     {
@@ -133,6 +139,13 @@ const Example: FC = () => {
           }}
         >
           Double by 2 using compute shader
+        </button>
+        <button
+          className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
+          disabled={locked}
+          onClick={toggleLabel}
+        >
+          Toggle Label {label ? "ON" : "OFF"}
         </button>
       </ToOverlay>
       <textarea
