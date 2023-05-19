@@ -491,26 +491,3 @@ export const useBuffers = <
     ) ?? {}
   );
 };
-
-/**
- * Idea: A `useGPU` hook:
- *
- * const { pipeline, buffer, shader } = useGPU(({ createBuffer, createTexture }) => {
- *   // block
- * })
- *
- * Kinda like this useBuffer but for everything, auto manages/reconcile the used resources
- * based on structural hashes of the descriptors/call orders of the created resources.
- *
- * Kinda like a render, but imperative
- * all code ran inside // block should pass
- * trough our own reconciler, like we did
- * with DRER-rs last year.
- *
- * Also solves the problem of re-rendering recreating resources
- * without needing, and you can return more stuff from the bag
- * AND you also solve the optional device issue.
- *
- * Looks like a cool API and is a nice way to hide the GPU device, that I want to become
- * private anyways...
- */

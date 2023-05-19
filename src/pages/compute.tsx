@@ -3,47 +3,47 @@ import Head from "next/head";
 
 import { useMemo, type FC, useState } from "react";
 import { useGPUDevice } from "~/webgpu/gpu-device";
-import {
-  useBuffers,
-  useComputePipeline,
-  useShaderModule,
-} from "~/webgpu/resources";
 import { computePass, immediateRenderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
-import { useAsyncAction, useMemoBag } from "~/utils/hooks";
+import { useAsyncAction } from "~/utils/hooks";
 import { ToOverlay } from "~/utils/overlay";
 import { useToggle } from "usehooks-ts";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
-  const entireShaderApparently = useShaderModule(
-    /* wgsl */ `
-      @group(0) @binding(0) var<storage, read_write> data: array<f32>;
- 
-      @compute @workgroup_size(1) fn computeMain(
-        @builtin(global_invocation_id) id: vec3<u32>
-      ) {
-        let i = id.x;
-        data[i] = data[i] * 2.0;
-      }
-    `,
-    "doubling compute module"
-  );
-
-  const pipeline = useComputePipeline(
-    entireShaderApparently,
-    "Main compute pipeline"
-  );
-
-  const device = useGPUDevice();
-
   const input = useMemo(() => new Float32Array([1, 3, 5, 5, 9, 7, 4, 5]), []);
 
   const [label, toggleLabel] = useToggle();
 
-  const { resultBuffer, workBuffer, bindGroup } = useBuffers(
-    { device, pipeline },
-    (createBuffer, { device, pipeline }) => {
-      const workBuffer = createBuffer({
+  const device = useGPUDevice();
+
+  const { bindGroup, workBuffer, resultBuffer, pipeline } = useGPU(
+    { device },
+    (gpu, { device }) => {
+      const shader = gpu.createShaderModule({
+        code: /* wgsl */ `
+        @group(0) @binding(0) var<storage, read_write> data: array<f32>;
+        
+        @compute @workgroup_size(1) fn computeMain(
+          @builtin(global_invocation_id) id: vec3<u32>
+        ) {
+          let i = id.x;
+          data[i] = data[i] * 2.0;
+        }
+      `,
+        label: "doubling compute module",
+      });
+
+      const pipeline = gpu.createComputePipeline({
+        label: "Main compute pipeline",
+        layout: "auto",
+        compute: {
+          module: shader,
+          entryPoint: "computeMain",
+        },
+      });
+
+      const workBuffer = gpu.createBuffer({
         label: "work buffer",
         size: input.byteLength,
         usage:
@@ -51,9 +51,10 @@ const Example: FC = () => {
           GPUBufferUsage.COPY_SRC |
           GPUBufferUsage.COPY_DST,
       });
+
       device.queue.writeBuffer(workBuffer, 0, input);
 
-      const resultBuffer = createBuffer({
+      const resultBuffer = gpu.createBuffer({
         label: `result ${String(label)} buffer`,
         size: input.byteLength,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
@@ -65,7 +66,7 @@ const Example: FC = () => {
         entries: [{ binding: 0, resource: { buffer: workBuffer } }],
       });
 
-      return { resultBuffer, workBuffer, bindGroup };
+      return { bindGroup, workBuffer, resultBuffer, pipeline };
     },
     [label]
   );
