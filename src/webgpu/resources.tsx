@@ -401,7 +401,7 @@ type NoUndefinedField<T> = {
  */
 export const useBuffers = <
   T extends Record<string, unknown | null | undefined>,
-  R extends {}
+  R extends Record<string, unknown>
 >(
   bag: T,
   callback: (
