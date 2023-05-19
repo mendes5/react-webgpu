@@ -201,6 +201,8 @@ const Cube = () => {
 }
 ```
 
+But in the meantime we have [some solutions in mind](./incoherent-ramblings/declarative%20vs%20imperative.md)
+
 Another problem that is not present now but will be later is how much of React + Javascript are bad for garbage collectors.
 
 A single hook like this:
