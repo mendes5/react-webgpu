@@ -1,7 +1,7 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { type FC, useRef, useCallback } from "react";
+import { type FC, useRef } from "react";
 import {
   usePresentationFormat,
   useWebGPUCanvas,
@@ -14,7 +14,116 @@ import { ToOverlay } from "~/utils/overlay";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useAsyncResource } from "~/utils/hooks";
 import { getSourceSize, loadImageBitmap, numMipLevels } from "~/utils/mips";
-import { type GPU_API, gpu, useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
+
+const renderMips = (device: GPUDevice, texture: GPUTexture) => {
+  const shader = gpu.createShaderModule({
+    label: "GPU Mips generator shader",
+    code: /* wgsl */ `
+      struct VSOutput {
+        @builtin(position) position: vec4f,
+        @location(0) texcoord: vec2f,
+      };
+
+      @vertex fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> VSOutput {
+        var pos = array<vec2f, 6>(
+
+          // 1st triangle
+          vec2f( 0.0,  0.0),  // center
+          vec2f( 1.0,  0.0),  // right, center
+          vec2f( 0.0,  1.0),  // center, top
+
+          // 2nd triangle
+          vec2f( 0.0,  1.0),  // center, top
+          vec2f( 1.0,  0.0),  // right, center
+          vec2f( 1.0,  1.0),  // right, top
+        );
+
+        var vsOutput: VSOutput;
+        let xy = pos[vertexIndex];
+        vsOutput.position = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
+        vsOutput.texcoord = vec2f(xy.x, 1.0 - xy.y);
+        return vsOutput;
+      }
+
+      @group(0) @binding(0) var ourSampler: sampler;
+      @group(0) @binding(1) var ourTexture: texture_2d<f32>;
+
+      @fragment fn fsMain(fsInput: VSOutput) -> @location(0) vec4f {
+        return textureSample(ourTexture, ourSampler, fsInput.texcoord);
+      }
+    `,
+  });
+
+  const sampler = gpu.createSampler({
+    label: "GPU mips generator sampler",
+    minFilter: "linear",
+  });
+
+  const pipeline = gpu.createRenderPipeline({
+    label: "GPU mips generator render pipeline",
+    layout: "auto",
+    vertex: {
+      entryPoint: "vsMain",
+      module: shader,
+    },
+    fragment: {
+      entryPoint: "fsMain",
+      module: shader,
+      targets: [{ format: texture.format }],
+    },
+  });
+
+  const encoder = device.createCommandEncoder({
+    label: "mip gen encoder",
+  });
+
+  let width = texture.width;
+  let height = texture.height;
+  let baseMipLevel = 0;
+
+  while (width > 1 || height > 1) {
+    width = Math.max(1, (width / 2) | 0);
+    height = Math.max(1, (height / 2) | 0);
+
+    const bindGroup = device.createBindGroup({
+      label: "Mipmap bind group layout",
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: sampler },
+        {
+          binding: 1,
+          resource: texture.createView({
+            baseMipLevel,
+            mipLevelCount: 1,
+          }),
+        },
+      ],
+    });
+
+    ++baseMipLevel;
+
+    const renderPassDescriptor = {
+      label: "our basic canvas renderPass",
+      colorAttachments: [
+        {
+          view: texture.createView({ baseMipLevel, mipLevelCount: 1 }),
+          loadOp: "clear",
+          storeOp: "store",
+        } as const,
+      ],
+    };
+
+    const pass = encoder.beginRenderPass(renderPassDescriptor);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(6); // call our vertex shader 6 times
+    pass.end();
+  }
+
+  const commandBuffer = encoder.finish();
+  device.queue.submit([commandBuffer]);
+};
 
 const Example: FC = () => {
   const canvas = useWebGPUCanvas();
@@ -45,121 +154,9 @@ const Example: FC = () => {
 
   const toggleRef = useRef(0);
 
-  const renderMips = useCallback(
-    (gpu: GPU_API, device: GPUDevice, texture: GPUTexture) => {
-      const shader = gpu.createShaderModule({
-        label: "GPU Mips generator shader",
-        code: /* wgsl */ `
-            struct VSOutput {
-              @builtin(position) position: vec4f,
-              @location(0) texcoord: vec2f,
-            };
-  
-            @vertex fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> VSOutput {
-              var pos = array<vec2f, 6>(
-  
-                // 1st triangle
-                vec2f( 0.0,  0.0),  // center
-                vec2f( 1.0,  0.0),  // right, center
-                vec2f( 0.0,  1.0),  // center, top
-  
-                // 2nd triangle
-                vec2f( 0.0,  1.0),  // center, top
-                vec2f( 1.0,  0.0),  // right, center
-                vec2f( 1.0,  1.0),  // right, top
-              );
-  
-              var vsOutput: VSOutput;
-              let xy = pos[vertexIndex];
-              vsOutput.position = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
-              vsOutput.texcoord = vec2f(xy.x, 1.0 - xy.y);
-              return vsOutput;
-            }
-  
-            @group(0) @binding(0) var ourSampler: sampler;
-            @group(0) @binding(1) var ourTexture: texture_2d<f32>;
-  
-            @fragment fn fsMain(fsInput: VSOutput) -> @location(0) vec4f {
-              return textureSample(ourTexture, ourSampler, fsInput.texcoord);
-            }
-          `,
-      });
-
-      const sampler = gpu.createSampler({
-        label: "GPU mips generator sampler",
-        minFilter: "linear",
-      });
-
-      const pipeline = gpu.createRenderPipeline({
-        label: "GPU mips generator render pipeline",
-        layout: "auto",
-        vertex: {
-          entryPoint: "vsMain",
-          module: shader,
-        },
-        fragment: {
-          entryPoint: "fsMain",
-          module: shader,
-          targets: [{ format: texture.format }],
-        },
-      });
-
-      const encoder = device.createCommandEncoder({
-        label: "mip gen encoder",
-      });
-
-      let width = texture.width;
-      let height = texture.height;
-      let baseMipLevel = 0;
-
-      while (width > 1 || height > 1) {
-        width = Math.max(1, (width / 2) | 0);
-        height = Math.max(1, (height / 2) | 0);
-
-        const bindGroup = device.createBindGroup({
-          label: "Mipmap bind group layout",
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: sampler },
-            {
-              binding: 1,
-              resource: texture.createView({
-                baseMipLevel,
-                mipLevelCount: 1,
-              }),
-            },
-          ],
-        });
-
-        ++baseMipLevel;
-
-        const renderPassDescriptor = {
-          label: "our basic canvas renderPass",
-          colorAttachments: [
-            {
-              view: texture.createView({ baseMipLevel, mipLevelCount: 1 }),
-              loadOp: "clear",
-              storeOp: "store",
-            } as const,
-          ],
-        };
-
-        const pass = encoder.beginRenderPass(renderPassDescriptor);
-        pass.setPipeline(pipeline);
-        pass.setBindGroup(0, bindGroup);
-        pass.draw(6); // call our vertex shader 6 times
-        pass.end();
-      }
-
-      const commandBuffer = encoder.finish();
-      device.queue.submit([commandBuffer]);
-    },
-    []
-  );
-
   useGPU(
-    { renderMips, texture1, texture2, texture3 },
-    ({ renderMips, device, texture1, texture2, texture3 }) => {
+    { texture1, texture2, texture3 },
+    ({ device, texture1, texture2, texture3 }) => {
       if (
         texture1.type !== "success" ||
         texture2.type !== "success" ||
@@ -240,7 +237,7 @@ const Example: FC = () => {
         { texture: texture1R },
         { width: size1[0], height: size1[1] }
       );
-      renderMips(gpu, device, texture1R);
+      renderMips(device, texture1R);
 
       const size2 = getSourceSize(texture2.value);
       const texture2R = gpu.createTexture({
@@ -258,7 +255,7 @@ const Example: FC = () => {
         { texture: texture2R },
         { width: size2[0], height: size2[1] }
       );
-      renderMips(gpu, device, texture2R);
+      renderMips(device, texture2R);
 
       const size3 = getSourceSize(texture3.value);
       const texture3R = gpu.createTexture({
@@ -276,7 +273,7 @@ const Example: FC = () => {
         { texture: texture3R },
         { width: size3[0], height: size3[1] }
       );
-      renderMips(gpu, device, texture3R);
+      renderMips(device, texture3R);
 
       const objectInfos = [] as {
         bindGroups: GPUBindGroup[];

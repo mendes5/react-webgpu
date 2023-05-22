@@ -96,7 +96,7 @@ const Example: FC = () => {
 
   const objectCountRef = useRef(10);
 
-  const { randomize } = useGPU(
+  const randomize = useGPU(
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Index example shader",
@@ -306,7 +306,7 @@ const Example: FC = () => {
         });
       };
 
-      return { randomize };
+      return randomize;
     },
     [presentationFormat]
   );

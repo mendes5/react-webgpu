@@ -110,31 +110,25 @@ export const gpu: GPU_API = {
   createTexture: (desc) => GPUProxy.createTexture(desc),
 };
 
-export function useGPU<
-  T extends Record<string, unknown | null | undefined>,
-  R extends Record<string, unknown>
->(
+export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
   bag: T,
-  callback: (bag: NoUndefinedField<T> & { device: GPUDevice }) => R | void,
+  callback: (bag: NoUndefinedField<T> & { device: GPUDevice }) => R,
   deps: unknown[]
-): Partial<R>;
+): R extends Record<string, unknown> ? Partial<R> : R | undefined;
 
-export function useGPU<R extends Record<string, unknown>>(
-  callback: (bag: { device: GPUDevice }) => R | void,
+export function useGPU<R>(
+  callback: (bag: { device: GPUDevice }) => R,
   deps: unknown[]
-): Partial<R>;
+): R extends Record<string, unknown> ? Partial<R> : R | undefined;
 
-export function useGPU<
-  T extends Record<string, unknown | null | undefined>,
-  R extends Record<string, unknown>
->(
-  bagOrCallback: T | ((bag: { device: GPUDevice }) => R | void),
+export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
+  bagOrCallback: T | ((bag: { device: GPUDevice }) => R),
   callbackOrDeps:
     | unknown[]
-    | ((bag: NoUndefinedField<T> & { device: GPUDevice }) => R | void),
+    | ((bag: NoUndefinedField<T> & { device: GPUDevice }) => R),
   maybeDeps?: unknown[]
-): Partial<R> {
-  let callback: (bag: NoUndefinedField<T> & { device: GPUDevice }) => R | void;
+): R extends Record<string, unknown> ? Partial<R> : R | undefined {
+  let callback: (bag: NoUndefinedField<T> & { device: GPUDevice }) => R;
   let bag: T;
   let deps;
 
@@ -194,7 +188,7 @@ export function useGPU<
     [device, id]
   );
 
-  const [result, setResult] = useState<Partial<R>>({});
+  const [result, setResult] = useState<R>();
 
   useEffectBag(
     { ...bag, device },
@@ -421,11 +415,17 @@ export function useGPU<
         fromCache.destroy();
       });
 
-      setResult(out ?? {});
+      setResult(out ?? undefined);
     },
-    () => setResult({}),
+    () => setResult(undefined),
     [...deps, device, id]
   );
 
-  return result;
+  if (typeof result === "object")
+    // eslint-disable-next-line
+    // @ts-ignore
+    return result ?? {};
+  // eslint-disable-next-line
+  // @ts-ignore
+  else return result ?? undefined;
 }
