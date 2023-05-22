@@ -7,7 +7,6 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -76,7 +75,6 @@ export function createCircleVerticesSeparate({
 }
 
 const Example: FC = () => {
-  const device = useGPUDevice();
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
@@ -106,7 +104,6 @@ const Example: FC = () => {
   const objectCountRef = useRef(kNumObjects);
 
   useGPU(
-    { device },
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Separate vertex buffers",
@@ -301,7 +298,7 @@ const Example: FC = () => {
         });
       };
     },
-    []
+    [presentationFormat]
   );
 
   const { locked, execute } = useAction({}, () => actionRef.current?.(), []);

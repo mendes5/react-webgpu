@@ -7,7 +7,6 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -41,8 +40,6 @@ const Example: FC = () => {
     []
   );
 
-  const device = useGPUDevice();
-
   const frameRef = useRef<(time: number) => void>();
   useFrame((time) => {
     frameRef.current?.(time);
@@ -52,7 +49,6 @@ const Example: FC = () => {
   const context = useWebGPUContext();
 
   useGPU(
-    { device, modeU, modeV, magFilter, minFilter },
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "External texture shader module",
@@ -208,9 +204,8 @@ const Example: FC = () => {
           });
         };
       }
-      return {};
     },
-    [state]
+    [presentationFormat, modeU, modeV, magFilter, minFilter, state]
   );
 
   return (

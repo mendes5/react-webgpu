@@ -7,7 +7,6 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -26,7 +25,6 @@ function startPlayingAndWaitForVideo(video: HTMLVideoElement) {
 }
 
 const Example: FC = () => {
-  const device = useGPUDevice();
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
@@ -38,30 +36,25 @@ const Example: FC = () => {
 
   const kMatrixOffset = 0;
 
-  const video = useAsyncResource(
-    async (dispose) => {
-      if (!device) return Promise.reject();
-
-      const video = document.createElement("video");
-      video.muted = true;
-      video.loop = true;
-      video.preload = "auto";
-      video.autoplay = true;
-      video.src =
-        "/resources/Golden_retriever_swimming_the_doggy_paddle-360-no-audio.webm";
-      video.style.display = "none";
-      document.body.appendChild(video);
-      dispose(() => {
-        document.body.removeChild(video);
-      });
-      await startPlayingAndWaitForVideo(video);
-      return { video };
-    },
-    [device]
-  );
+  const video = useAsyncResource(async (dispose) => {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.loop = true;
+    video.preload = "auto";
+    video.autoplay = true;
+    video.src =
+      "/resources/Golden_retriever_swimming_the_doggy_paddle-360-no-audio.webm";
+    video.style.display = "none";
+    document.body.appendChild(video);
+    dispose(() => {
+      document.body.removeChild(video);
+    });
+    await startPlayingAndWaitForVideo(video);
+    return { video };
+  }, []);
 
   useGPU(
-    { device, video },
+    { video },
     ({ device, video }) => {
       if (video.type !== "success") return;
       const shader = gpu.createShaderModule({
@@ -249,7 +242,7 @@ const Example: FC = () => {
         });
       };
     },
-    []
+    [presentationFormat]
   );
 
   return null;

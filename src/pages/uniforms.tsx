@@ -7,7 +7,6 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -24,7 +23,6 @@ const Example: FC = () => {
   const canvas = useWebGPUCanvas();
 
   const presentationFormat = usePresentationFormat();
-  const device = useGPUDevice();
   const context = useWebGPUContext();
 
   const kColorOffset = 0;
@@ -34,7 +32,6 @@ const Example: FC = () => {
   const actionRef = useRef<() => void>();
 
   useGPU(
-    { device },
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Uniforms example",
@@ -185,7 +182,7 @@ const Example: FC = () => {
         });
       };
     },
-    []
+    [presentationFormat]
   );
 
   const { locked, execute } = useAction({}, () => actionRef.current?.(), []);

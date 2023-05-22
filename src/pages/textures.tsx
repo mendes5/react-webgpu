@@ -7,7 +7,6 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -60,11 +59,9 @@ const Example: FC = () => {
   const canvas = useWebGPUCanvas();
 
   const presentationFormat = usePresentationFormat();
-  const device = useGPUDevice();
   const context = useWebGPUContext();
 
   useGPU(
-    { device },
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Texture Shader",
@@ -209,7 +206,7 @@ const Example: FC = () => {
         });
       };
     },
-    [modeU, modeV, magFilter, minFilter]
+    [presentationFormat, modeU, modeV, magFilter, minFilter]
   );
 
   const spanRef = useRef<HTMLSpanElement>(null);

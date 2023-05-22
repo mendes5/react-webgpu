@@ -7,7 +7,6 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -17,7 +16,6 @@ import { type Vec3, mat4 } from "~/utils/math";
 import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
-  const device = useGPUDevice();
   const context = useWebGPUContext();
   const toggleRef = useRef(true);
   const canvas = useWebGPUCanvas();
@@ -29,7 +27,6 @@ const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
 
   useGPU(
-    { device },
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "CPU Mips shader",
@@ -231,7 +228,7 @@ const Example: FC = () => {
         });
       };
     },
-    []
+    [presentationFormat]
   );
 
   return (

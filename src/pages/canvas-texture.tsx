@@ -7,7 +7,6 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -21,8 +20,6 @@ import { makeWithMips } from "~/webgpu/gpu-mipmap";
 import { range } from "~/utils/other";
 
 const Example: FC = () => {
-  const device = useGPUDevice();
-
   const context = useWebGPUContext();
 
   const kMatrixOffset = 0;
@@ -60,8 +57,7 @@ const Example: FC = () => {
   const frameRef = useRef<(time: number) => void>();
 
   useGPU(
-    { presentationFormat, device },
-    ({ presentationFormat, device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Canvas texture shader",
         code: /* wgsl */ `
@@ -244,7 +240,7 @@ const Example: FC = () => {
       };
       return {};
     },
-    [mips]
+    [presentationFormat, mips]
   );
 
   const canvas = useWebGPUCanvas();

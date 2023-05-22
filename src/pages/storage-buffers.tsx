@@ -13,12 +13,10 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
-  const device = useGPUDevice();
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
@@ -29,7 +27,6 @@ const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
 
   useGPU(
-    { device },
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Storage buffers shader module",
@@ -201,7 +198,7 @@ const Example: FC = () => {
         });
       };
     },
-    []
+    [presentationFormat]
   );
 
   return null;

@@ -7,7 +7,6 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -88,7 +87,6 @@ export function createCircleVerticesIndexed({
   };
 }
 const Example: FC = () => {
-  const device = useGPUDevice();
   const presentationFormat = usePresentationFormat();
   const context = useWebGPUContext();
 
@@ -99,7 +97,6 @@ const Example: FC = () => {
   const objectCountRef = useRef(10);
 
   const { randomize } = useGPU(
-    { device },
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Index example shader",
@@ -311,7 +308,7 @@ const Example: FC = () => {
 
       return { randomize };
     },
-    []
+    [presentationFormat]
   );
 
   useFrame((time) => {

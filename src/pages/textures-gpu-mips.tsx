@@ -7,7 +7,6 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -15,10 +14,9 @@ import { ToOverlay } from "~/utils/overlay";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useAsyncResource } from "~/utils/hooks";
 import { getSourceSize, loadImageBitmap, numMipLevels } from "~/utils/mips";
-import { GPU_API, gpu, useGPU } from "~/webgpu/use-gpu";
+import { type GPU_API, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
-  const device = useGPUDevice();
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
@@ -160,7 +158,7 @@ const Example: FC = () => {
   );
 
   useGPU(
-    { device, renderMips, texture1, texture2, texture3 },
+    { renderMips, texture1, texture2, texture3 },
     ({ renderMips, device, texture1, texture2, texture3 }) => {
       if (
         texture1.type !== "success" ||
@@ -394,7 +392,7 @@ const Example: FC = () => {
         });
       };
     },
-    []
+    [presentationFormat]
   );
 
   return (

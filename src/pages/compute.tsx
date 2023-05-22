@@ -2,7 +2,6 @@ import { type NextPage } from "next";
 import Head from "next/head";
 
 import { useMemo, type FC, useState } from "react";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { computePass, immediateRenderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { useAsyncAction } from "~/utils/hooks";
@@ -15,10 +14,7 @@ const Example: FC = () => {
 
   const [label, toggleLabel] = useToggle();
 
-  const device = useGPUDevice();
-
-  const { bindGroup, workBuffer, resultBuffer, pipeline } = useGPU(
-    { device },
+  const { bindGroup, workBuffer, resultBuffer, pipeline, device } = useGPU(
     ({ device }) => {
       const shader = gpu.createShaderModule({
         code: /* wgsl */ `
@@ -66,7 +62,7 @@ const Example: FC = () => {
         entries: [{ binding: 0, resource: { buffer: workBuffer } }],
       });
 
-      return { bindGroup, workBuffer, resultBuffer, pipeline };
+      return { device, bindGroup, workBuffer, resultBuffer, pipeline };
     },
     [label]
   );

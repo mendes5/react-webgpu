@@ -3,7 +3,6 @@ import Head from "next/head";
 
 import { useRef, type FC } from "react";
 import { usePresentationFormat, useWebGPUContext } from "~/webgpu/canvas";
-import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
@@ -12,14 +11,12 @@ import { gpu, useGPU } from "~/webgpu/use-gpu";
 const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
 
-  const device = useGPUDevice();
   const context = useWebGPUContext();
 
   const frameRef = useRef<(time: number) => void>();
 
   useGPU(
-    { presentationFormat, device },
-    ({ presentationFormat, device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "our hardcoded red triangle shader",
         code: /* wgsl */ `
@@ -72,7 +69,7 @@ const Example: FC = () => {
         });
       };
     },
-    []
+    [presentationFormat]
   );
 
   useFrame((time) => {

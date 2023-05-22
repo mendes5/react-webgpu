@@ -117,7 +117,47 @@ export function useGPU<
   bag: T,
   callback: (bag: NoUndefinedField<T> & { device: GPUDevice }) => R | void,
   deps: unknown[]
+): Partial<R>;
+
+export function useGPU<R extends Record<string, unknown>>(
+  callback: (bag: { device: GPUDevice }) => R | void,
+  deps: unknown[]
+): Partial<R>;
+
+export function useGPU<
+  T extends Record<string, unknown | null | undefined>,
+  R extends Record<string, unknown>
+>(
+  bagOrCallback: T | ((bag: { device: GPUDevice }) => R | void),
+  callbackOrDeps:
+    | unknown[]
+    | ((bag: NoUndefinedField<T> & { device: GPUDevice }) => R | void),
+  maybeDeps?: unknown[]
 ): Partial<R> {
+  let callback: (bag: NoUndefinedField<T> & { device: GPUDevice }) => R | void;
+  let bag: T;
+  let deps;
+
+  if (typeof bagOrCallback === "function") {
+    callback = bagOrCallback;
+  } else if (typeof callbackOrDeps == "function") {
+    callback = callbackOrDeps;
+  } else {
+    throw new Error("Cannot find useGPU render callback");
+  }
+
+  if (typeof bagOrCallback === "object") {
+    bag = bagOrCallback;
+  } else {
+    bag = {} as T;
+  }
+
+  if (Array.isArray(callbackOrDeps)) {
+    deps = callbackOrDeps;
+  } else {
+    deps = maybeDeps ?? [];
+  }
+
   const id = useId();
   const device = useGPUDevice();
   const currentBuffersRef = useRef<Map<string, H<GPUBuffer>>>();
