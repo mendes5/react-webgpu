@@ -10,7 +10,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { useToggle } from "usehooks-ts";
 import { ToOverlay } from "~/utils/overlay";
 import { match } from "ts-pattern";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const InterpolationType = {
   /**
@@ -72,7 +72,7 @@ const Example: FC = () => {
 
   useGPU(
     { presentationFormat, device },
-    (gpu, { presentationFormat, device }) => {
+    ({ presentationFormat, device }) => {
       const shader = gpu.createShaderModule({
         label: "rgb  triangle shader",
         code: value

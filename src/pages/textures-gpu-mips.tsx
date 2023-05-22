@@ -15,7 +15,7 @@ import { ToOverlay } from "~/utils/overlay";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useAsyncResource } from "~/utils/hooks";
 import { getSourceSize, loadImageBitmap, numMipLevels } from "~/utils/mips";
-import { GPU_API, useGPU } from "~/webgpu/use-gpu";
+import { GPU_API, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const device = useGPUDevice();
@@ -161,7 +161,7 @@ const Example: FC = () => {
 
   useGPU(
     { device, renderMips, texture1, texture2, texture3 },
-    (gpu, { renderMips, device, texture1, texture2, texture3 }) => {
+    ({ renderMips, device, texture1, texture2, texture3 }) => {
       if (
         texture1.type !== "success" ||
         texture2.type !== "success" ||

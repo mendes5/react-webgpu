@@ -14,7 +14,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { useAction } from "~/utils/hooks";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 export function createCircleVerticesSeparate({
   radius = 1,
@@ -107,7 +107,7 @@ const Example: FC = () => {
 
   useGPU(
     { device },
-    (gpu, { device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Separate vertex buffers",
         code: /* wgsl */ `

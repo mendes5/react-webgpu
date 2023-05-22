@@ -12,7 +12,7 @@ import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",
@@ -62,9 +62,10 @@ const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
   const device = useGPUDevice();
   const context = useWebGPUContext();
+
   useGPU(
     { device },
-    (gpu, { device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Texture Shader",
         code: /* wgsl */ `

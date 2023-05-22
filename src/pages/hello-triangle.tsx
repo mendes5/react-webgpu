@@ -7,7 +7,7 @@ import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
@@ -19,7 +19,7 @@ const Example: FC = () => {
 
   useGPU(
     { presentationFormat, device },
-    (gpu, { presentationFormat, device }) => {
+    ({ presentationFormat, device }) => {
       const shader = gpu.createShaderModule({
         label: "our hardcoded red triangle shader",
         code: /* wgsl */ `

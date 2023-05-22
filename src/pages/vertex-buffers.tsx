@@ -15,7 +15,7 @@ import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { createCircleVertices } from "~/utils/geometry";
 import { useAction } from "~/utils/hooks";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const device = useGPUDevice();
@@ -56,7 +56,7 @@ const Example: FC = () => {
 
   useGPU(
     { device },
-    (gpu, { device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Vertex buffer example shader",
         code: /* wgsl */ `

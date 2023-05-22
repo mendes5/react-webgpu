@@ -14,7 +14,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { useAction } from "~/utils/hooks";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const frameRef = useRef<(time: number) => void>();
@@ -35,7 +35,7 @@ const Example: FC = () => {
 
   useGPU(
     { device },
-    (gpu, { device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Uniforms example",
         code: /* wgsl */ `

@@ -66,15 +66,56 @@ const globalResourceHash = (desc: GPUObjectDescriptorBase) =>
     },
   });
 
+const stubGPUProxy: GPU_API = {
+  createBuffer() {
+    throw new Error(
+      "Cannot call gpu.createBuffer() outside the rendering cycle of useGPU."
+    );
+  },
+  createComputePipeline() {
+    throw new Error(
+      "Cannot call gpu.createComputePipeline() outside the rendering cycle of useGPU."
+    );
+  },
+  createRenderPipeline() {
+    throw new Error(
+      "Cannot call gpu.createRenderPipeline() outside the rendering cycle of useGPU."
+    );
+  },
+  createSampler() {
+    throw new Error(
+      "Cannot call gpu.createSampler() outside the rendering cycle of useGPU."
+    );
+  },
+  createShaderModule() {
+    throw new Error(
+      "Cannot call gpu.createShaderModule() outside the rendering cycle of useGPU."
+    );
+  },
+  createTexture() {
+    throw new Error(
+      "Cannot call gpu.createTexture() outside the rendering cycle of useGPU."
+    );
+  },
+};
+
+const GPUProxy = Object.assign({}, stubGPUProxy);
+
+export const gpu: GPU_API = {
+  createBuffer: (desc) => GPUProxy.createBuffer(desc),
+  createComputePipeline: (desc) => GPUProxy.createComputePipeline(desc),
+  createRenderPipeline: (desc) => GPUProxy.createRenderPipeline(desc),
+  createSampler: (desc) => GPUProxy.createSampler(desc),
+  createShaderModule: (desc) => GPUProxy.createShaderModule(desc),
+  createTexture: (desc) => GPUProxy.createTexture(desc),
+};
+
 export function useGPU<
   T extends Record<string, unknown | null | undefined>,
   R extends Record<string, unknown>
 >(
   bag: T,
-  callback: (
-    gpu: GPU_API,
-    bag: NoUndefinedField<T> & { device: GPUDevice }
-  ) => R | void,
+  callback: (bag: NoUndefinedField<T> & { device: GPUDevice }) => R | void,
   deps: unknown[]
 ): Partial<R> {
   const id = useId();
@@ -131,226 +172,181 @@ export function useGPU<
       const unusedBuffers = new Set([...currentBuffers.keys()]);
       const unusedTextures = new Set([...currentTextures.keys()]);
 
-      const deviceAPI = {
-        current: {
-          createBuffer: (desc: GPUBufferDescriptor) => {
-            const key = localResourceHash(desc, device);
-            const existing = currentBuffers.get(key);
+      GPUProxy.createBuffer = (desc: GPUBufferDescriptor) => {
+        const key = localResourceHash(desc, device);
+        const existing = currentBuffers.get(key);
 
-            if (existing) {
-              unusedBuffers.delete(key);
-              return existing;
-            }
+        if (existing) {
+          unusedBuffers.delete(key);
+          return existing;
+        }
 
-            const resource = hashed(device.createBuffer(desc));
-            currentBuffers.set(key, resource);
+        const resource = hashed(device.createBuffer(desc));
+        currentBuffers.set(key, resource);
 
-            log(
-              `Created buffer ${desc.label ?? "<unnamed>"} (${shortId(
-                resource.instanceId
-              )}) for instance ${id}`
-            );
-            return resource;
-          },
-          createTexture: (desc: GPUTextureDescriptor) => {
-            const key = localResourceHash(desc, device);
-            const existing = currentTextures.get(key);
-
-            if (existing) {
-              unusedTextures.delete(key);
-              return existing;
-            }
-
-            const resource = hashed(device.createTexture(desc));
-            currentTextures.set(key, resource);
-
-            log(
-              `Created texture ${desc.label ?? "<unnamed>"} ${shortId(
-                resource.instanceId
-              )} for instance ${id}`
-            );
-            return resource;
-          },
-          createShaderModule: (desc: GPUShaderModuleDescriptor) => {
-            let cache = SHADER_CACHE.get(device);
-            if (!cache) {
-              const newCache = new Map();
-              cache = newCache;
-              SHADER_CACHE.set(device, cache);
-              device.lost
-                .then(() => {
-                  SHADER_CACHE.delete(device);
-                  const size = newCache.size;
-                  newCache.clear();
-                  log(
-                    `Cleared ${size} items from shader cache of device ${device.instanceId}`
-                  );
-                })
-                .catch(console.error);
-            }
-
-            const key = globalResourceHash(desc);
-            const fromCache = cache.get(key);
-
-            if (fromCache) return fromCache;
-
-            const resource = hashed(device.createShaderModule(desc));
-            cache.set(key, resource);
-
-            log(
-              `Created shader ${desc.label ?? "<unnamed>"} ${shortId(
-                resource.instanceId
-              )} for device ${shortId(device.instanceId)}`
-            );
-            return resource;
-          },
-          createRenderPipeline: (desc: GPURenderPipelineDescriptor) => {
-            let cache = RENDER_PIPELINE_CACHE.get(device);
-            if (!cache) {
-              const newCache = new Map();
-              cache = newCache;
-              RENDER_PIPELINE_CACHE.set(device, cache);
-              device.lost
-                .then(() => {
-                  RENDER_PIPELINE_CACHE.delete(device);
-                  const size = newCache.size;
-                  newCache.clear();
-                  log(
-                    `Cleared ${size} items from render pipeline cache of device ${device.instanceId}`
-                  );
-                })
-                .catch(console.error);
-            }
-
-            const key = globalResourceHash(desc);
-            const fromCache = cache.get(key);
-
-            if (fromCache) return fromCache;
-
-            const resource = hashed(device.createRenderPipeline(desc));
-            log(
-              `Created render pipeline ${desc.label ?? "<unnamed>"} ${shortId(
-                resource.instanceId
-              )} for device ${shortId(device.instanceId)}`
-            );
-
-            cache.set(key, resource);
-
-            return resource;
-          },
-          createComputePipeline: (desc: GPUComputePipelineDescriptor) => {
-            let cache = COMPUTE_PIPELINE_CACHE.get(device);
-            if (!cache) {
-              const newCache = new Map();
-              cache = newCache;
-              COMPUTE_PIPELINE_CACHE.set(device, cache);
-              device.lost
-                .then(() => {
-                  COMPUTE_PIPELINE_CACHE.delete(device);
-                  const size = newCache.size;
-                  newCache.clear();
-                  log(
-                    `Cleared ${size} items from compute pipeline cache of device ${device.instanceId}`
-                  );
-                })
-                .catch(console.error);
-            }
-
-            const key = globalResourceHash(desc);
-            const fromCache = cache.get(key);
-
-            if (fromCache) return fromCache;
-
-            const resource = hashed(device.createComputePipeline(desc));
-            cache.set(key, resource);
-
-            log(
-              `Created compute pipeline ${desc.label ?? "<unnamed>"} ${shortId(
-                resource.instanceId
-              )} for device ${shortId(device.instanceId)}`
-            );
-            return resource;
-          },
-          createSampler: (desc: GPUSamplerDescriptor) => {
-            let cache = SAMPLER_CACHE.get(device);
-            if (!cache) {
-              const newCache = new Map();
-              cache = newCache;
-              SAMPLER_CACHE.set(device, cache);
-              device.lost
-                .then(() => {
-                  SAMPLER_CACHE.delete(device);
-                  const size = newCache.size;
-                  newCache.clear();
-                  log(
-                    `Cleared ${size} items from sampler cache of device ${device.instanceId}`
-                  );
-                })
-                .catch(console.error);
-            }
-
-            const key = globalResourceHash(desc);
-            const fromCache = cache.get(key);
-
-            if (fromCache) return fromCache;
-
-            const resource = hashed(device.createSampler(desc));
-            cache.set(key, resource);
-
-            log(
-              `Created sampler ${desc.label ?? "<unnamed>"} ${shortId(
-                resource.instanceId
-              )} for device ${shortId(device.instanceId)}`
-            );
-            return resource;
-          },
-        },
-      };
-
-      // Isn't this triple indirection?
-      // maybe just deviceAPI is ok to invalidate the callback bag
-      const callbacks = {
-        createBuffer: (desc: GPUBufferDescriptor) =>
-          deviceAPI.current.createBuffer(desc),
-        createTexture: (desc: GPUTextureDescriptor) =>
-          deviceAPI.current.createTexture(desc),
-        createShaderModule: (desc: GPUShaderModuleDescriptor) =>
-          deviceAPI.current.createShaderModule(desc),
-        createRenderPipeline: (desc: GPURenderPipelineDescriptor) =>
-          deviceAPI.current.createRenderPipeline(desc),
-        createComputePipeline: (desc: GPUComputePipelineDescriptor) =>
-          deviceAPI.current.createComputePipeline(desc),
-        createSampler: (desc: GPUSamplerDescriptor) =>
-          deviceAPI.current.createSampler(desc),
-      };
-
-      const out = callbackRef.current(callbacks, { ...bag, device });
-
-      deviceAPI.current.createBuffer = () => {
-        throw new Error(
-          "Cannot call `createBuffer` outside the render cycle of useGPU."
+        log(
+          `Created buffer ${desc.label ?? "<unnamed>"} (${shortId(
+            resource.instanceId
+          )}) for instance ${id}`
         );
+        return resource;
       };
-      deviceAPI.current.createTexture = () => {
-        throw new Error(
-          "Cannot call `createTexture` outside the render cycle of useGPU."
+      GPUProxy.createTexture = (desc: GPUTextureDescriptor) => {
+        const key = localResourceHash(desc, device);
+        const existing = currentTextures.get(key);
+
+        if (existing) {
+          unusedTextures.delete(key);
+          return existing;
+        }
+
+        const resource = hashed(device.createTexture(desc));
+        currentTextures.set(key, resource);
+
+        log(
+          `Created texture ${desc.label ?? "<unnamed>"} ${shortId(
+            resource.instanceId
+          )} for instance ${id}`
         );
+        return resource;
       };
-      deviceAPI.current.createShaderModule = () => {
-        throw new Error(
-          "Cannot call `createShaderModule` outside the render cycle of useGPU."
+      GPUProxy.createShaderModule = (desc: GPUShaderModuleDescriptor) => {
+        let cache = SHADER_CACHE.get(device);
+        if (!cache) {
+          const newCache = new Map();
+          cache = newCache;
+          SHADER_CACHE.set(device, cache);
+          device.lost
+            .then(() => {
+              SHADER_CACHE.delete(device);
+              const size = newCache.size;
+              newCache.clear();
+              log(
+                `Cleared ${size} items from shader cache of device ${device.instanceId}`
+              );
+            })
+            .catch(console.error);
+        }
+
+        const key = globalResourceHash(desc);
+        const fromCache = cache.get(key);
+
+        if (fromCache) return fromCache;
+
+        const resource = hashed(device.createShaderModule(desc));
+        cache.set(key, resource);
+
+        log(
+          `Created shader ${desc.label ?? "<unnamed>"} ${shortId(
+            resource.instanceId
+          )} for device ${shortId(device.instanceId)}`
         );
+        return resource;
       };
-      deviceAPI.current.createRenderPipeline = () => {
-        throw new Error(
-          "Cannot call `createRenderPipeline` outside the render cycle of useGPU."
+      GPUProxy.createRenderPipeline = (desc: GPURenderPipelineDescriptor) => {
+        let cache = RENDER_PIPELINE_CACHE.get(device);
+        if (!cache) {
+          const newCache = new Map();
+          cache = newCache;
+          RENDER_PIPELINE_CACHE.set(device, cache);
+          device.lost
+            .then(() => {
+              RENDER_PIPELINE_CACHE.delete(device);
+              const size = newCache.size;
+              newCache.clear();
+              log(
+                `Cleared ${size} items from render pipeline cache of device ${device.instanceId}`
+              );
+            })
+            .catch(console.error);
+        }
+
+        const key = globalResourceHash(desc);
+        const fromCache = cache.get(key);
+
+        if (fromCache) return fromCache;
+
+        const resource = hashed(device.createRenderPipeline(desc));
+        log(
+          `Created render pipeline ${desc.label ?? "<unnamed>"} ${shortId(
+            resource.instanceId
+          )} for device ${shortId(device.instanceId)}`
         );
+
+        cache.set(key, resource);
+
+        return resource;
       };
-      deviceAPI.current.createComputePipeline = () => {
-        throw new Error(
-          "Cannot call `createComputePipeline` outside the render cycle of useGPU."
+      GPUProxy.createComputePipeline = (desc: GPUComputePipelineDescriptor) => {
+        let cache = COMPUTE_PIPELINE_CACHE.get(device);
+        if (!cache) {
+          const newCache = new Map();
+          cache = newCache;
+          COMPUTE_PIPELINE_CACHE.set(device, cache);
+          device.lost
+            .then(() => {
+              COMPUTE_PIPELINE_CACHE.delete(device);
+              const size = newCache.size;
+              newCache.clear();
+              log(
+                `Cleared ${size} items from compute pipeline cache of device ${device.instanceId}`
+              );
+            })
+            .catch(console.error);
+        }
+
+        const key = globalResourceHash(desc);
+        const fromCache = cache.get(key);
+
+        if (fromCache) return fromCache;
+
+        const resource = hashed(device.createComputePipeline(desc));
+        cache.set(key, resource);
+
+        log(
+          `Created compute pipeline ${desc.label ?? "<unnamed>"} ${shortId(
+            resource.instanceId
+          )} for device ${shortId(device.instanceId)}`
         );
+        return resource;
       };
+      GPUProxy.createSampler = (desc: GPUSamplerDescriptor) => {
+        let cache = SAMPLER_CACHE.get(device);
+        if (!cache) {
+          const newCache = new Map();
+          cache = newCache;
+          SAMPLER_CACHE.set(device, cache);
+          device.lost
+            .then(() => {
+              SAMPLER_CACHE.delete(device);
+              const size = newCache.size;
+              newCache.clear();
+              log(
+                `Cleared ${size} items from sampler cache of device ${device.instanceId}`
+              );
+            })
+            .catch(console.error);
+        }
+
+        const key = globalResourceHash(desc);
+        const fromCache = cache.get(key);
+
+        if (fromCache) return fromCache;
+
+        const resource = hashed(device.createSampler(desc));
+        cache.set(key, resource);
+
+        log(
+          `Created sampler ${desc.label ?? "<unnamed>"} ${shortId(
+            resource.instanceId
+          )} for device ${shortId(device.instanceId)}`
+        );
+        return resource;
+      };
+
+      const out = callbackRef.current({ ...bag, device });
+
+      Object.assign(GPUProxy, stubGPUProxy);
 
       unusedBuffers.forEach((resource) => {
         const fromCache = currentBuffers.get(resource);

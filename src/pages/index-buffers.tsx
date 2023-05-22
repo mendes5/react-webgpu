@@ -13,7 +13,7 @@ import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 export function createCircleVerticesIndexed({
   radius = 1,
@@ -100,7 +100,7 @@ const Example: FC = () => {
 
   const { randomize } = useGPU(
     { device },
-    (gpu, { device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Index example shader",
         code: /* wgsl */ `

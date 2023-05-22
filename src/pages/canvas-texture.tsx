@@ -15,7 +15,7 @@ import { type Vec3, mat4 } from "~/utils/math";
 import { useCanvas } from "~/webgpu/use-canvas";
 import { useToggle } from "usehooks-ts";
 import { ToOverlay } from "~/utils/overlay";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 import { getSourceSize, numMipLevels } from "~/utils/mips";
 import { makeWithMips } from "~/webgpu/gpu-mipmap";
 import { range } from "~/utils/other";
@@ -61,7 +61,7 @@ const Example: FC = () => {
 
   useGPU(
     { presentationFormat, device },
-    (gpu, { presentationFormat, device }) => {
+    ({ presentationFormat, device }) => {
       const shader = gpu.createShaderModule({
         label: "Canvas texture shader",
         code: /* wgsl */ `

@@ -14,7 +14,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { type MipTexture, generateMips } from "~/utils/mips";
 import { type Vec3, mat4 } from "~/utils/math";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const device = useGPUDevice();
@@ -30,7 +30,7 @@ const Example: FC = () => {
 
   useGPU(
     { device },
-    (gpu, { device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "CPU Mips shader",
         code: /* wgsl */ `

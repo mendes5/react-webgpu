@@ -8,7 +8,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { useAsyncAction } from "~/utils/hooks";
 import { ToOverlay } from "~/utils/overlay";
 import { useToggle } from "usehooks-ts";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const input = useMemo(() => new Float32Array([1, 3, 5, 5, 9, 7, 4, 5]), []);
@@ -19,7 +19,7 @@ const Example: FC = () => {
 
   const { bindGroup, workBuffer, resultBuffer, pipeline } = useGPU(
     { device },
-    (gpu, { device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         code: /* wgsl */ `
           @group(0) @binding(0) var<storage, read_write> data: array<f32>;

@@ -13,7 +13,7 @@ import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { useAsyncResource } from "~/utils/hooks";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 import { getSourceSize, loadImageBitmap } from "~/utils/mips";
 import { type H } from "~/utils/other";
 
@@ -53,7 +53,7 @@ const Example: FC = () => {
 
   useGPU(
     { device, modeU, modeV, magFilter, minFilter },
-    (gpu, { device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "External texture shader module",
         code: /* wgsl */ `

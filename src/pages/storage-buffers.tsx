@@ -15,7 +15,7 @@ import {
 } from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import { useGPU } from "~/webgpu/use-gpu";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const device = useGPUDevice();
@@ -30,7 +30,7 @@ const Example: FC = () => {
 
   useGPU(
     { device },
-    (gpu, { device }) => {
+    ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Storage buffers shader module",
         code: /*wgsl*/ `

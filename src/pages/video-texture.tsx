@@ -13,8 +13,8 @@ import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useAsyncResource } from "~/utils/hooks";
-import { useGPU } from "~/webgpu/use-gpu";
-import { getSourceSize, numMipLevels } from "~/utils/mips";
+import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { getSourceSize } from "~/utils/mips";
 import type { H } from "~/utils/other";
 
 function startPlayingAndWaitForVideo(video: HTMLVideoElement) {
@@ -35,8 +35,6 @@ const Example: FC = () => {
     frameRef.current?.(time);
   });
   const presentationFormat = usePresentationFormat();
-
-  const actionRef = useRef<() => void>();
 
   const kMatrixOffset = 0;
 
@@ -64,7 +62,7 @@ const Example: FC = () => {
 
   useGPU(
     { device, video },
-    (gpu, { device, video }) => {
+    ({ device, video }) => {
       if (video.type !== "success") return;
       const shader = gpu.createShaderModule({
         label: "Dogege shader",
