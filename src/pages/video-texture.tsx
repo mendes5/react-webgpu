@@ -1,19 +1,21 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { type FC } from "react";
-import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
+import { useRef, type FC } from "react";
+import {
+  usePresentationFormat,
+  useWebGPUCanvas,
+  useWebGPUContext,
+} from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import {
-  useExternalTexture,
-  usePipeline,
-  useShaderModule,
-} from "~/webgpu/resources";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { type Vec3, mat4 } from "~/utils/math";
-import { useAsyncResource, useMemoBag } from "~/utils/hooks";
+import { useAsyncResource } from "~/utils/hooks";
+import { useGPU } from "~/webgpu/use-gpu";
+import { getSourceSize, numMipLevels } from "~/utils/mips";
+import type { H } from "~/utils/other";
 
 function startPlayingAndWaitForVideo(video: HTMLVideoElement) {
   return new Promise((resolve, reject) => {
@@ -25,9 +27,48 @@ function startPlayingAndWaitForVideo(video: HTMLVideoElement) {
 
 const Example: FC = () => {
   const device = useGPUDevice();
+  const canvas = useWebGPUCanvas();
+  const context = useWebGPUContext();
 
-  const shader = useShaderModule(
-    /* wgsl */ `
+  const frameRef = useRef<(time: number) => void>();
+  useFrame((time) => {
+    frameRef.current?.(time);
+  });
+  const presentationFormat = usePresentationFormat();
+
+  const actionRef = useRef<() => void>();
+
+  const kMatrixOffset = 0;
+
+  const video = useAsyncResource(
+    async (dispose) => {
+      if (!device) return Promise.reject();
+
+      const video = document.createElement("video");
+      video.muted = true;
+      video.loop = true;
+      video.preload = "auto";
+      video.autoplay = true;
+      video.src =
+        "/resources/Golden_retriever_swimming_the_doggy_paddle-360-no-audio.webm";
+      video.style.display = "none";
+      document.body.appendChild(video);
+      dispose(() => {
+        document.body.removeChild(video);
+      });
+      await startPlayingAndWaitForVideo(video);
+      return { video };
+    },
+    [device]
+  );
+
+  useGPU(
+    { device, video },
+    (gpu, { device, video }) => {
+      if (video.type !== "success") return;
+      const shader = gpu.createShaderModule({
+        label: "Dogege shader",
+        code: /* wgsl */ `
       struct OurVertexShaderOutput {
         @builtin(position) position: vec4f,
         @location(0) texcoord: vec2f,
@@ -62,156 +103,156 @@ const Example: FC = () => {
       @fragment fn fsMain(fsInput: OurVertexShaderOutput) -> @location(0) vec4f {
         return textureSample(ourTexture, ourSampler, fsInput.texcoord);
       }`,
-    "rgb  triangle shader"
-  );
-
-  const pipeline = usePipeline(shader, "Main render pipeline");
-
-  const context = useWebGPUContext();
-
-  const kMatrixOffset = 0;
-
-  const canvas = useWebGPUCanvas();
-
-  const videoState = useAsyncResource(
-    async (dispose) => {
-      if (!device) return Promise.reject();
-
-      const video = document.createElement("video");
-      video.muted = true;
-      video.loop = true;
-      video.preload = "auto";
-      video.autoplay = true;
-      video.src =
-        "/resources/Golden_retriever_swimming_the_doggy_paddle-360-no-audio.webm";
-      video.style.display = "none";
-      document.body.appendChild(video);
-      dispose(() => {
-        document.body.removeChild(video);
       });
-      await startPlayingAndWaitForVideo(video);
-      return { video };
-    },
-    [device]
-  );
 
-  const [texture, updateTexture] = useExternalTexture(
-    videoState.type === "success" ? videoState.value.video : null,
-    { mips: false }
-  );
+      const pipeline = gpu.createRenderPipeline({
+        label: "Dogege pipeline",
+        layout: "auto",
+        vertex: {
+          entryPoint: "vsMain",
+          module: shader,
+        },
+        fragment: {
+          entryPoint: "fsMain",
+          module: shader,
+          targets: [{ format: presentationFormat }],
+        },
+      });
 
-  const { objectInfos } =
-    useMemoBag(
-      { device, pipeline, texture },
-      ({ device, pipeline, texture }) => {
-        const objectInfos = [];
+      const size = getSourceSize(video.value.video);
 
-        if (videoState.type === "success") {
-          for (let i = 0; i < 8; ++i) {
-            const sampler = device.createSampler({
-              addressModeU: "repeat",
-              addressModeV: "repeat",
-            });
+      const texture = gpu.createTexture({
+        format: "rgba8unorm",
+        // mipLevelCount: false ? numMipLevels(...size) : 1,
+        mipLevelCount: 1,
+        size,
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+      });
 
-            const uniformBufferSize = 16 * 4;
-            const uniformBuffer = device.createBuffer({
-              label: "uniforms for quad",
-              size: uniformBufferSize,
-              usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            });
+      const updateTexture = () => {
+        const size = getSourceSize(video.value.video);
+        device.queue.copyExternalImageToTexture(
+          { source: video.value.video },
+          { texture },
+          { width: size[0], height: size[1] }
+        );
 
-            const uniformValues = new Float32Array(uniformBufferSize / 4);
-            const matrix = uniformValues.subarray(kMatrixOffset, 16);
-
-            const bindGroup = device.createBindGroup({
-              layout: pipeline.getBindGroupLayout(0),
-              entries: [
-                { binding: 0, resource: sampler },
-                { binding: 1, resource: texture.createView() },
-                { binding: 2, resource: { buffer: uniformBuffer } },
-              ],
-            });
-
-            objectInfos.push({
-              bindGroup,
-              matrix,
-              uniformValues,
-              uniformBuffer,
-            });
-          }
+        if (texture.mipLevelCount > 1) {
+          // renderMips();
         }
-
-        return { objectInfos };
-      },
-      [device, videoState, pipeline]
-    ) ?? {};
-
-  useFrame(() => {
-    if (!device || !pipeline || !objectInfos) return null;
-    if (videoState.type === "success") {
-      updateTexture();
-
-      const renderPassDescriptor: GPURenderPassDescriptor = {
-        label: "our basic canvas renderPass",
-        colorAttachments: [
-          {
-            view: context.getCurrentTexture().createView(),
-            clearValue: [0.3, 0.3, 0.3, 1],
-            loadOp: "clear",
-            storeOp: "store",
-          },
-        ],
       };
 
-      immediateRenderPass(device, "triangle encoder", (encoder) => {
-        renderPass(encoder, renderPassDescriptor, (pass) => {
-          const fov = (60 * Math.PI) / 180;
-          const aspect = canvas.clientWidth / canvas.clientHeight;
-          const zNear = 1;
-          const zFar = 2000;
-          const projectionMatrix = mat4.perspective(fov, aspect, zNear, zFar);
+      const objectInfos = [] as {
+        bindGroup: GPUBindGroup;
+        matrix: Float32Array;
+        uniformValues: Float32Array;
+        uniformBuffer: H<GPUBuffer>;
+      }[];
 
-          const cameraPosition: Vec3 = [0, 0, 2];
-          const up: Vec3 = [0, 1, 0];
-          const target: Vec3 = [0, 0, 0];
-
-          const cameraMatrix = mat4.lookAt(cameraPosition, target, up);
-          const viewMatrix = mat4.inverse(cameraMatrix);
-          const viewProjectionMatrix = mat4.multiply(
-            projectionMatrix,
-            viewMatrix
-          );
-
-          pass.setPipeline(pipeline);
-
-          objectInfos.forEach(
-            ({ bindGroup, matrix, uniformBuffer, uniformValues }, i) => {
-              const xSpacing = 1.2;
-              const ySpacing = 0.7;
-              const zDepth = 50;
-
-              const x = (i % 4) - 1.5;
-              const y = i < 4 ? 1 : -1;
-
-              mat4.translate(
-                viewProjectionMatrix,
-                [x * xSpacing, y * ySpacing, -zDepth * 0.5],
-                matrix
-              );
-              mat4.rotateX(matrix, 0.5 * Math.PI, matrix);
-              mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
-              mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
-
-              device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
-
-              pass.setBindGroup(0, bindGroup);
-              pass.draw(6);
-            }
-          );
+      for (let i = 0; i < 8; ++i) {
+        const sampler = gpu.createSampler({
+          label: `Sampler ${i} for dogege`,
+          addressModeU: "repeat",
+          addressModeV: "repeat",
         });
-      });
-    }
-  });
+
+        const uniformBufferSize = 16 * 4;
+        const uniformBuffer = gpu.createBuffer({
+          label: `uniforms buffer for quad ${i}`,
+          size: uniformBufferSize,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        const uniformValues = new Float32Array(uniformBufferSize / 4);
+        const matrix = uniformValues.subarray(kMatrixOffset, 16);
+
+        const bindGroup = device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: sampler },
+            { binding: 1, resource: texture.createView() },
+            { binding: 2, resource: { buffer: uniformBuffer } },
+          ],
+        });
+
+        const info = {
+          bindGroup,
+          matrix,
+          uniformValues,
+          uniformBuffer,
+        };
+        objectInfos.push(info);
+      }
+
+      frameRef.current = () => {
+        updateTexture();
+
+        const renderPassDescriptor: GPURenderPassDescriptor = {
+          label: "our basic canvas renderPass",
+          colorAttachments: [
+            {
+              view: context.getCurrentTexture().createView(),
+              clearValue: [0.3, 0.3, 0.3, 1],
+              loadOp: "clear",
+              storeOp: "store",
+            },
+          ],
+        };
+
+        immediateRenderPass(device, "triangle encoder", (encoder) => {
+          renderPass(encoder, renderPassDescriptor, (pass) => {
+            const fov = (60 * Math.PI) / 180;
+            const aspect = canvas.clientWidth / canvas.clientHeight;
+            const zNear = 1;
+            const zFar = 2000;
+            const projectionMatrix = mat4.perspective(fov, aspect, zNear, zFar);
+
+            const cameraPosition: Vec3 = [0, 0, 2];
+            const up: Vec3 = [0, 1, 0];
+            const target: Vec3 = [0, 0, 0];
+
+            const cameraMatrix = mat4.lookAt(cameraPosition, target, up);
+            const viewMatrix = mat4.inverse(cameraMatrix);
+            const viewProjectionMatrix = mat4.multiply(
+              projectionMatrix,
+              viewMatrix
+            );
+
+            pass.setPipeline(pipeline);
+
+            objectInfos.forEach(
+              ({ bindGroup, matrix, uniformBuffer, uniformValues }, i) => {
+                const xSpacing = 1.2;
+                const ySpacing = 0.7;
+                const zDepth = 50;
+
+                const x = (i % 4) - 1.5;
+                const y = i < 4 ? 1 : -1;
+
+                mat4.translate(
+                  viewProjectionMatrix,
+                  [x * xSpacing, y * ySpacing, -zDepth * 0.5],
+                  matrix
+                );
+                mat4.rotateX(matrix, 0.5 * Math.PI, matrix);
+                mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
+                mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
+
+                device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+
+                pass.setBindGroup(0, bindGroup);
+                pass.draw(6);
+              }
+            );
+          });
+        });
+      };
+    },
+    []
+  );
 
   return null;
 };

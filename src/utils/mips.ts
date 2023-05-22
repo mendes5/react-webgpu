@@ -103,8 +103,8 @@ export async function loadImageBitmap(
 export function getSourceSize(source: GPUImageCopyExternalImage["source"]) {
   if (source instanceof HTMLVideoElement) {
     return [
-      source.videoWidth || source.width,
-      source.videoHeight || source.height,
+      source.videoWidth - 1 || source.width,
+      source.videoHeight - 1 || source.height,
     ] as const;
   }
 

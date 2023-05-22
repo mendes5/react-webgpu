@@ -2,20 +2,64 @@ import { type NextPage } from "next";
 import Head from "next/head";
 
 import { type FC, useRef, useMemo } from "react";
-import { useWebGPUCanvas, useWebGPUContext } from "~/webgpu/canvas";
+import {
+  usePresentationFormat,
+  useWebGPUCanvas,
+  useWebGPUContext,
+} from "~/webgpu/canvas";
 import { useGPUDevice } from "~/webgpu/gpu-device";
 import { useFrame } from "~/webgpu/per-frame";
-import { usePipeline, useShaderModule } from "~/webgpu/resources";
 import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { createCircleVertices } from "~/utils/geometry";
-import { useAction, useMemoBag, useV } from "~/utils/hooks";
+import { useAction } from "~/utils/hooks";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
-  const shader = useShaderModule(
-    /* wgsl */ `
+  const device = useGPUDevice();
+  const canvas = useWebGPUCanvas();
+  const context = useWebGPUContext();
+
+  const frameRef = useRef<(time: number) => void>();
+  useFrame((time) => {
+    frameRef.current?.(time);
+  });
+  const presentationFormat = usePresentationFormat();
+
+  const actionRef = useRef<() => void>();
+
+  const kScaleOffset = 0;
+
+  const kNumObjects = 100;
+
+  const staticUnitSize =
+    4 * 4 + // color is 4 32bit floats (4bytes each)
+    2 * 4 + // offset is 2 32bit floats (4bytes each)
+    2 * 4; // padding
+  const changingUnitSize = 2 * 4; // scale is 2 32bit floats (4bytes each)
+
+  const staticStorageBufferSize = staticUnitSize * kNumObjects;
+  const changingStorageBufferSize = changingUnitSize * kNumObjects;
+
+  // offsets to the various uniform values in float32 indices
+  const kColorOffset = 0;
+  const kOffsetOffset = 4;
+
+  const staticStorageValues = useMemo(
+    () => new Float32Array(staticStorageBufferSize / 4),
+    [staticStorageBufferSize]
+  );
+
+  const objectCountRef = useRef(kNumObjects);
+
+  useGPU(
+    { device },
+    (gpu, { device }) => {
+      const shader = gpu.createShaderModule({
+        label: "Vertex buffer example shader",
+        code: /* wgsl */ `
         struct OurStruct {
           color: vec4f,
           offset: vec2f,
@@ -58,220 +102,147 @@ const Example: FC = () => {
           return vsOut.color;
         }
       `,
-    "rgb  triangle shader"
-  );
+      });
 
-  const [buffers] = useV(
-    () => [
-      {
-        arrayStride: (2 + 3) * 4, // (2 + 3) floats, 4 bytes each
-        attributes: [
-          { shaderLocation: 0, offset: 0, format: "float32x2" }, // position
-          { shaderLocation: 1, offset: 8, format: "float32x3" }, // color
-        ] as const,
-      },
-    ],
-    []
-  );
+      const buffers = [
+        {
+          arrayStride: (2 + 3) * 4, // (2 + 3) floats, 4 bytes each
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: "float32x2" }, // position
+            { shaderLocation: 1, offset: 8, format: "float32x3" }, // color
+          ] as const,
+        },
+      ];
 
-  /**
-   * Pipeline will be recreated if the shader changes
-   */
-  const pipeline = usePipeline(shader, "Main render pipeline", buffers);
+      const pipeline = gpu.createRenderPipeline({
+        label: "Vertex buffer example render pipeline",
+        layout: "auto",
+        vertex: {
+          entryPoint: "vsMain",
+          module: shader,
+          buffers,
+        },
+        fragment: {
+          entryPoint: "fsMain",
+          module: shader,
+          targets: [{ format: presentationFormat }],
+        },
+      });
 
-  const device = useGPUDevice();
-  const context = useWebGPUContext();
+      const objectInfos = [] as { scale: number }[];
 
-  const kScaleOffset = 0;
+      // create 2 storage buffers
+      const staticStorageBuffer = device.createBuffer({
+        label: "static storage for objects",
+        size: staticStorageBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      });
 
-  const kNumObjects = 100;
+      const changingStorageBuffer = device.createBuffer({
+        label: "changing storage for objects",
+        size: changingStorageBufferSize,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      });
 
-  const staticUnitSize =
-    4 * 4 + // color is 4 32bit floats (4bytes each)
-    2 * 4 + // offset is 2 32bit floats (4bytes each)
-    2 * 4; // padding
-  const changingUnitSize = 2 * 4; // scale is 2 32bit floats (4bytes each)
-
-  const staticStorageBufferSize = staticUnitSize * kNumObjects;
-  const changingStorageBufferSize = changingUnitSize * kNumObjects;
-
-  // offsets to the various uniform values in float32 indices
-  const kColorOffset = 0;
-  const kOffsetOffset = 4;
-
-  const staticStorageValues = useMemo(
-    () => new Float32Array(staticStorageBufferSize / 4),
-    [staticStorageBufferSize]
-  );
-  const initRef = useRef(false);
-
-  const objectInfos = useRef([] as { scale: number }[]);
-
-  const {
-    storageValues,
-    changingStorageBuffer,
-    bindGroup,
-    numVertices,
-    staticStorageBuffer,
-    vertexBuffer,
-  } =
-    useMemoBag(
-      { device, pipeline },
-      ({ device, pipeline }) => {
-        // create 2 storage buffers
-        const staticStorageBuffer = device.createBuffer({
-          label: "static storage for objects",
-          size: staticStorageBufferSize,
-          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
-
-        const changingStorageBuffer = device.createBuffer({
-          label: "changing storage for objects",
-          size: changingStorageBufferSize,
-          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
-
-        if (!initRef.current) {
-          initRef.current = true;
-          for (let i = 0; i < kNumObjects; ++i) {
-            const staticOffset = i * (staticUnitSize / 4);
-
-            // These are only set once so set them now
-            staticStorageValues.set(
-              [rand(), rand(), rand(), 1],
-              staticOffset + kColorOffset
-            ); // set the color
-            staticStorageValues.set(
-              [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-              staticOffset + kOffsetOffset
-            ); // set the offset
-
-            objectInfos.current.push({
-              scale: rand(0.2, 0.5),
-            });
-          }
-        }
-
-        device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
-
-        const storageValues = new Float32Array(changingStorageBufferSize / 4);
-
-        // Vertex buffer setup
-
-        const { vertexData, numVertices } = createCircleVertices({
-          radius: 0,
-          innerRadius: 1,
-          numSubdivisions: 360,
-        });
-
-        const vertexBuffer = device.createBuffer({
-          label: "storage buffer vertices",
-          size: vertexData.byteLength,
-          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        });
-
-        device.queue.writeBuffer(vertexBuffer, 0, vertexData);
-
-        const bindGroup = device.createBindGroup({
-          label: "bind group for objects",
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: { buffer: staticStorageBuffer } },
-            { binding: 1, resource: { buffer: changingStorageBuffer } },
-          ],
-        });
-
-        return {
-          vertexBuffer,
-          numVertices,
-          staticStorageValues,
-          objectInfos,
-          storageValues,
-          changingStorageBuffer,
-          staticStorageBuffer,
-          bindGroup,
-        };
-      },
-      [
-        device,
-        pipeline,
-        changingStorageBufferSize,
-        staticStorageBufferSize,
-        staticUnitSize,
-      ]
-    ) ?? {};
-
-  const randomize = useAction(
-    {
-      staticStorageValues,
-      device,
-      staticStorageBuffer,
-    },
-    ({ staticStorageValues, device, staticStorageBuffer }) => {
-      for (const i of range(kNumObjects)) {
+      for (let i = 0; i < kNumObjects; ++i) {
         const staticOffset = i * (staticUnitSize / 4);
 
+        // These are only set once so set them now
         staticStorageValues.set(
           [rand(), rand(), rand(), 1],
           staticOffset + kColorOffset
-        );
+        ); // set the color
         staticStorageValues.set(
           [rand(-0.9, 0.9), rand(-0.9, 0.9)],
           staticOffset + kOffsetOffset
-        );
-        device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
+        ); // set the offset
+
+        objectInfos.push({
+          scale: rand(0.2, 0.5),
+        });
       }
+
+      device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
+
+      const storageValues = new Float32Array(changingStorageBufferSize / 4);
+
+      // Vertex buffer setup
+
+      const { vertexData, numVertices } = createCircleVertices({
+        radius: 0,
+        innerRadius: 1,
+        numSubdivisions: 360,
+      });
+
+      const vertexBuffer = device.createBuffer({
+        label: "storage buffer vertices",
+        size: vertexData.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+
+      device.queue.writeBuffer(vertexBuffer, 0, vertexData);
+
+      const bindGroup = device.createBindGroup({
+        label: "bind group for objects",
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: staticStorageBuffer } },
+          { binding: 1, resource: { buffer: changingStorageBuffer } },
+        ],
+      });
+
+      actionRef.current = () => {
+        for (const i of range(kNumObjects)) {
+          const staticOffset = i * (staticUnitSize / 4);
+
+          staticStorageValues.set(
+            [rand(), rand(), rand(), 1],
+            staticOffset + kColorOffset
+          );
+          staticStorageValues.set(
+            [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+            staticOffset + kOffsetOffset
+          );
+          device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
+        }
+      };
+
+      frameRef.current = () => {
+        const renderPassDescriptor: GPURenderPassDescriptor = {
+          label: "our basic canvas renderPass",
+          colorAttachments: [
+            {
+              view: context.getCurrentTexture().createView(),
+              clearValue: [0.3, 0.3, 0.3, 1],
+              loadOp: "clear",
+              storeOp: "store",
+            },
+          ],
+        };
+
+        immediateRenderPass(device, "triangle encoder", (encoder) => {
+          renderPass(encoder, renderPassDescriptor, (pass) => {
+            pass.setPipeline(pipeline);
+            pass.setVertexBuffer(0, vertexBuffer);
+
+            const aspect = canvas.width / canvas.height;
+
+            objectInfos.forEach(({ scale }, ndx) => {
+              const offset = ndx * (changingUnitSize / 4);
+              storageValues.set([scale / aspect, scale], offset + kScaleOffset);
+            });
+            device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
+
+            pass.setBindGroup(0, bindGroup);
+            pass.draw(numVertices, objectCountRef.current);
+          });
+        });
+      };
     },
     []
   );
 
-  const canvas = useWebGPUCanvas();
-
-  const objectCountRef = useRef(kNumObjects);
-
-  useFrame(() => {
-    if (
-      !device ||
-      !pipeline ||
-      !vertexBuffer ||
-      !objectInfos ||
-      !changingStorageBuffer ||
-      !bindGroup ||
-      !numVertices ||
-      !storageValues
-    )
-      return null;
-
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-      label: "our basic canvas renderPass",
-      colorAttachments: [
-        {
-          view: context.getCurrentTexture().createView(),
-          clearValue: [0.3, 0.3, 0.3, 1],
-          loadOp: "clear",
-          storeOp: "store",
-        },
-      ],
-    };
-
-    immediateRenderPass(device, "triangle encoder", (encoder) => {
-      renderPass(encoder, renderPassDescriptor, (pass) => {
-        pass.setPipeline(pipeline);
-        pass.setVertexBuffer(0, vertexBuffer);
-
-        const aspect = canvas.width / canvas.height;
-
-        objectInfos.current.forEach(({ scale }, ndx) => {
-          const offset = ndx * (changingUnitSize / 4);
-          storageValues.set([scale / aspect, scale], offset + kScaleOffset);
-        });
-        device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
-
-        pass.setBindGroup(0, bindGroup);
-        pass.draw(numVertices, objectCountRef.current);
-      });
-    });
-  });
+  const randomize = useAction({}, () => actionRef.current?.(), []);
 
   const spanRef = useRef<HTMLSpanElement>(null);
 
