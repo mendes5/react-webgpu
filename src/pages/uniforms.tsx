@@ -7,19 +7,13 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useFrame } from "~/webgpu/per-frame";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { useAction } from "~/utils/hooks";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
-  const frameRef = useRef<(time: number) => void>();
-  useFrame((time) => {
-    frameRef.current?.(time);
-  });
   const canvas = useWebGPUCanvas();
 
   const presentationFormat = usePresentationFormat();
@@ -148,7 +142,7 @@ const Example: FC = () => {
         }
       };
 
-      frameRef.current = () => {
+      frame.main = ({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -161,25 +155,23 @@ const Example: FC = () => {
           ],
         };
 
-        immediateRenderPass(device, "triangle encoder", (encoder) => {
-          renderPass(encoder, renderPassDescriptor, (pass) => {
-            pass.setPipeline(pipeline);
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
+        pass.setPipeline(pipeline);
 
-            const aspect = canvas.width / canvas.height;
+        const aspect = canvas.width / canvas.height;
 
-            for (const {
-              scale,
-              bindGroup,
-              uniformBuffer,
-              uniformValues,
-            } of objectInfos) {
-              uniformValues.set([scale / aspect, scale], kScaleOffset);
-              device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
-              pass.setBindGroup(0, bindGroup);
-              pass.draw(3);
-            }
-          });
-        });
+        for (const {
+          scale,
+          bindGroup,
+          uniformBuffer,
+          uniformValues,
+        } of objectInfos) {
+          uniformValues.set([scale / aspect, scale], kScaleOffset);
+          device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+          pass.setBindGroup(0, bindGroup);
+          pass.draw(3);
+        }
+        pass.end();
       };
     },
     [presentationFormat]

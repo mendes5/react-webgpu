@@ -1,15 +1,13 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useState, type FC, useRef } from "react";
+import { useState, type FC } from "react";
 import { usePresentationFormat, useWebGPUContext } from "~/webgpu/canvas";
-import { useFrame } from "~/webgpu/per-frame";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { useToggle } from "usehooks-ts";
 import { ToOverlay } from "~/utils/overlay";
 import { match } from "ts-pattern";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const InterpolationType = {
   /**
@@ -64,16 +62,14 @@ const Example: FC = () => {
       .otherwise(() => `${type}, ${sampling}`);
 
   const presentationFormat = usePresentationFormat();
-  const frameRef = useRef<(frame: number) => void>();
 
   const context = useWebGPUContext();
 
-  useGPU(
-    ({ device }) => {
-      const shader = gpu.createShaderModule({
-        label: "rgb  triangle shader",
-        code: value
-          ? /* wgsl */ `
+  useGPU(() => {
+    const shader = gpu.createShaderModule({
+      label: "rgb  triangle shader",
+      code: value
+        ? /* wgsl */ `
             struct OurVertexShaderOutput {
               // Note @builtin(position) is accessible in the 
               // vertex shader too, so you can either access fsInput.position
@@ -135,7 +131,7 @@ const Example: FC = () => {
             //   return fsInput.color;
             // }
           `
-          : /* wgsl */ `
+        : /* wgsl */ `
             struct OurVertexShaderOutput {
               @builtin(position) position: vec4f,
             };
@@ -161,53 +157,45 @@ const Example: FC = () => {
               return select(red, cyan, checker);
             }
       `,
-      });
+    });
 
-      const pipeline = gpu.createRenderPipeline({
-        label: "Main render pipeline",
-        layout: "auto",
-        vertex: {
-          module: shader,
-          buffers: [],
-          entryPoint: "vsMain",
-        },
-        fragment: {
-          module: shader,
-          entryPoint: "fsMain",
-          targets: [{ format: presentationFormat }],
-        },
-      });
+    const pipeline = gpu.createRenderPipeline({
+      label: "Main render pipeline",
+      layout: "auto",
+      vertex: {
+        module: shader,
+        buffers: [],
+        entryPoint: "vsMain",
+      },
+      fragment: {
+        module: shader,
+        entryPoint: "fsMain",
+        targets: [{ format: presentationFormat }],
+      },
+    });
 
-      frameRef.current = () => {
-        const renderPassDescriptor: GPURenderPassDescriptor = {
-          label: "our basic canvas  renderPass",
-          colorAttachments: [
-            // This is the location(0)
-            // since we use context.getCurrentTexture as the view
-            // it will render to the canvas
-            {
-              view: context.getCurrentTexture().createView(),
-              clearValue: [0.0, 0.0, 0.0, 1],
-              loadOp: "clear",
-              storeOp: "store",
-            },
-          ],
-        };
-
-        immediateRenderPass(device, "triangle encoder", (encoder) => {
-          renderPass(encoder, renderPassDescriptor, (pass) => {
-            pass.setPipeline(pipeline);
-            pass.draw(3);
-          });
-        });
+    frame.main = ({ encoder }) => {
+      const renderPassDescriptor: GPURenderPassDescriptor = {
+        label: "our basic canvas  renderPass",
+        colorAttachments: [
+          // This is the location(0)
+          // since we use context.getCurrentTexture as the view
+          // it will render to the canvas
+          {
+            view: context.getCurrentTexture().createView(),
+            clearValue: [0.0, 0.0, 0.0, 1],
+            loadOp: "clear",
+            storeOp: "store",
+          },
+        ],
       };
-    },
-    [value, type, presentationFormat, sampling]
-  );
 
-  useFrame((time) => {
-    frameRef.current?.(time);
-  });
+      const pass = encoder.beginRenderPass(renderPassDescriptor);
+      pass.setPipeline(pipeline);
+      pass.draw(3);
+      pass.end();
+    };
+  }, [value, type, presentationFormat, sampling]);
 
   return (
     <ToOverlay>

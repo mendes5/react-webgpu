@@ -8,13 +8,12 @@ import {
   useWebGPUContext,
 } from "~/webgpu/canvas";
 import { useFrame } from "~/webgpu/per-frame";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useCanvas } from "~/webgpu/use-canvas";
 import { useToggle } from "usehooks-ts";
 import { ToOverlay } from "~/utils/overlay";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
 import { getSourceSize, numMipLevels } from "~/utils/mips";
 import { makeWithMips } from "~/webgpu/gpu-mipmap";
 import { range } from "~/utils/other";
@@ -164,18 +163,33 @@ const Example: FC = () => {
         };
       });
 
-      frameRef.current = (time) => {
+      frame.main = ({ time, encoder }) => {
         updateCanvas(time);
-
         device.queue.copyExternalImageToTexture(
           { source: ctx.canvas, flipY: true },
           { texture },
           { width: size[0], height: size[1] }
         );
-
         if (mips) {
           updateMips();
         }
+
+        const fov = (60 * Math.PI) / 180;
+        const aspect = canvas.clientWidth / canvas.clientHeight;
+        const zNear = 1;
+        const zFar = 2000;
+        const projectionMatrix = mat4.perspective(fov, aspect, zNear, zFar);
+
+        const cameraPosition: Vec3 = [0, 0, 2];
+        const up: Vec3 = [0, 1, 0];
+        const target: Vec3 = [0, 0, 0];
+
+        const cameraMatrix = mat4.lookAt(cameraPosition, target, up);
+        const viewMatrix = mat4.inverse(cameraMatrix);
+        const viewProjectionMatrix = mat4.multiply(
+          projectionMatrix,
+          viewMatrix
+        );
 
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
@@ -189,56 +203,36 @@ const Example: FC = () => {
           ],
         };
 
-        immediateRenderPass(device, "triangle encoder", (encoder) => {
-          renderPass(encoder, renderPassDescriptor, (pass) => {
-            const fov = (60 * Math.PI) / 180; // 60 degrees in radians
-            const aspect = canvas.clientWidth / canvas.clientHeight;
-            const zNear = 1;
-            const zFar = 2000;
-            const projectionMatrix = mat4.perspective(fov, aspect, zNear, zFar);
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
 
-            const cameraPosition: Vec3 = [0, 0, 2];
-            const up: Vec3 = [0, 1, 0];
-            const target: Vec3 = [0, 0, 0];
+        pass.setPipeline(pipeline);
 
-            const cameraMatrix = mat4.lookAt(cameraPosition, target, up);
-            const viewMatrix = mat4.inverse(cameraMatrix);
-            const viewProjectionMatrix = mat4.multiply(
-              projectionMatrix,
-              viewMatrix
+        objectInfos.forEach(
+          ({ bindGroup, matrix, uniformBuffer, uniformValues }, i) => {
+            const xSpacing = 1.2;
+            const ySpacing = 0.7;
+            const zDepth = 50;
+
+            const x = (i % 4) - 1.5;
+            const y = i < 4 ? 1 : -1;
+
+            mat4.translate(
+              viewProjectionMatrix,
+              [x * xSpacing, y * ySpacing, -zDepth * 0.5],
+              matrix
             );
+            mat4.rotateX(matrix, 0.5 * Math.PI, matrix);
+            mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
+            mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
 
-            pass.setPipeline(pipeline);
+            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+            pass.setBindGroup(0, bindGroup);
+            pass.draw(6);
+          }
+        );
 
-            objectInfos.forEach(
-              ({ bindGroup, matrix, uniformBuffer, uniformValues }, i) => {
-                const xSpacing = 1.2;
-                const ySpacing = 0.7;
-                const zDepth = 50;
-
-                const x = (i % 4) - 1.5;
-                const y = i < 4 ? 1 : -1;
-
-                mat4.translate(
-                  viewProjectionMatrix,
-                  [x * xSpacing, y * ySpacing, -zDepth * 0.5],
-                  matrix
-                );
-                mat4.rotateX(matrix, 0.5 * Math.PI, matrix);
-                mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
-                mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
-
-                // copy the values from JavaScript to the GPU
-                device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
-
-                pass.setBindGroup(0, bindGroup);
-                pass.draw(6); // call our vertex shader 6 times
-              }
-            );
-          });
-        });
+        pass.end();
       };
-      return {};
     },
     [presentationFormat, mips]
   );

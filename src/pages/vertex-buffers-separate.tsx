@@ -7,13 +7,11 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useFrame } from "~/webgpu/per-frame";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { useAction } from "~/utils/hooks";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 export function createCircleVerticesSeparate({
   radius = 1,
@@ -93,10 +91,6 @@ const Example: FC = () => {
   const kColorOffset = 0;
   const kOffsetOffset = 4;
 
-  const frameRef = useRef<(time: number) => void>();
-  useFrame((time) => {
-    frameRef.current?.(time);
-  });
   const presentationFormat = usePresentationFormat();
 
   const actionRef = useRef<() => void>();
@@ -265,7 +259,7 @@ const Example: FC = () => {
         }
       };
 
-      frameRef.current = () => {
+      frame.main = ({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -278,24 +272,22 @@ const Example: FC = () => {
           ],
         };
 
-        immediateRenderPass(device, "triangle encoder", (encoder) => {
-          renderPass(encoder, renderPassDescriptor, (pass) => {
-            pass.setPipeline(pipeline);
-            pass.setVertexBuffer(0, positionBuffer);
-            pass.setVertexBuffer(1, colorBuffer);
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
+        pass.setPipeline(pipeline);
+        pass.setVertexBuffer(0, positionBuffer);
+        pass.setVertexBuffer(1, colorBuffer);
 
-            const aspect = canvas.width / canvas.height;
+        const aspect = canvas.width / canvas.height;
 
-            objectInfos.forEach(({ scale }, ndx) => {
-              const offset = ndx * (changingUnitSize / 4);
-              storageValues.set([scale / aspect, scale], offset + kScaleOffset);
-            });
-            device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
-
-            pass.setBindGroup(0, bindGroup);
-            pass.draw(numVertices, objectCountRef.current);
-          });
+        objectInfos.forEach(({ scale }, ndx) => {
+          const offset = ndx * (changingUnitSize / 4);
+          storageValues.set([scale / aspect, scale], offset + kScaleOffset);
         });
+        device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
+
+        pass.setBindGroup(0, bindGroup);
+        pass.draw(numVertices, objectCountRef.current);
+        pass.end();
       };
     },
     [presentationFormat]

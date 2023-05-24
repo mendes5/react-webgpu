@@ -1,4 +1,11 @@
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { useGPUDevice } from "./gpu-device";
 import { shortId, type H, hashed } from "~/utils/other";
 import { useEffectBag } from "~/utils/hooks";
@@ -99,7 +106,45 @@ const stubGPUProxy: GPU_API = {
   },
 };
 
+export type FrameBag = {
+  time: number;
+  encoder: GPUCommandEncoder;
+};
+
+export const GPURendererContext = createContext<
+  Map<string, (bag: FrameBag) => void>
+>(new Map());
+
 const GPUProxy = Object.assign({}, stubGPUProxy);
+
+const stubRendererProxy: FrameAPI = {
+  useFrame: () => {
+    throw new Error(
+      "Tried to create a frame callback outside the rendering cycle of useGPU."
+    );
+  },
+};
+
+type FrameAPI = {
+  useFrame: (key: string, callback: (time: FrameBag) => void) => void;
+};
+
+const rendererProxy = Object.assign({}, stubRendererProxy);
+
+export const frame: Record<string, (bag: FrameBag) => void> = new Proxy(
+  {},
+  {
+    set(_, p, newValue: (bag: FrameBag) => void) {
+      if (typeof p === "symbol") {
+        throw new Error("Nah");
+      }
+
+      rendererProxy.useFrame(p, newValue);
+
+      return true;
+    },
+  }
+);
 
 export const gpu: GPU_API = {
   createBuffer: (desc) => GPUProxy.createBuffer(desc),
@@ -156,6 +201,9 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
   const device = useGPUDevice();
   const currentBuffersRef = useRef<Map<string, H<GPUBuffer>>>();
   const currentTexturesRef = useRef<Map<string, H<GPUTexture>>>();
+  const currentFramesRef = useRef<Set<string>>();
+
+  const rendererContext = useContext(GPURendererContext);
 
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
@@ -200,6 +248,10 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
 
       const currentBuffers = currentBuffersRef.current;
       const currentTextures = currentTexturesRef.current;
+
+      if (!currentFramesRef.current) currentFramesRef.current = new Set();
+
+      const currentFrames = currentFramesRef.current;
 
       if (!device) return;
 
@@ -378,9 +430,22 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
         return resource;
       };
 
+      const unusedFrames = new Set([...currentFrames.keys()]);
+
+      rendererProxy.useFrame = (key, callback) => {
+        const ownKey = `${key}@${id}`;
+        unusedFrames.delete(ownKey);
+        rendererContext.set(ownKey, callback);
+      };
+
       const out = callbackRef.current({ ...bag, device });
 
       Object.assign(GPUProxy, stubGPUProxy);
+      Object.assign(rendererProxy, stubRendererProxy);
+
+      unusedFrames.forEach((key) => {
+        rendererContext.delete(key);
+      });
 
       unusedBuffers.forEach((resource) => {
         const fromCache = currentBuffers.get(resource);
@@ -417,15 +482,18 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
 
       setResult(out ?? undefined);
     },
-    () => setResult(undefined),
-    [...deps, device, id]
+    () => {
+      setResult(undefined);
+    },
+    [...deps, device, id, rendererContext]
   );
 
-  if (typeof result === "object")
+  if (typeof result === "object" || typeof result === "undefined") {
     // eslint-disable-next-line
     // @ts-ignore
     return result ?? {};
+  }
   // eslint-disable-next-line
   // @ts-ignore
-  else return result ?? undefined;
+  return result ?? undefined;
 }

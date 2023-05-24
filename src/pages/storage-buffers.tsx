@@ -1,29 +1,23 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useRef, type FC } from "react";
+import { type FC } from "react";
 import { createCircleVerticesNonShadow } from "~/utils/geometry";
 
 import { rand } from "~/utils/other";
 
 import { WebGPUApp } from "~/utils/webgpu-app";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import {
   usePresentationFormat,
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useFrame } from "~/webgpu/per-frame";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
-  const frameRef = useRef<(time: number) => void>();
-  useFrame((time) => {
-    frameRef.current?.(time);
-  });
   const presentationFormat = usePresentationFormat();
 
   useGPU(
@@ -165,7 +159,7 @@ const Example: FC = () => {
         ],
       });
 
-      frameRef.current = () => {
+      frame.main = ({ encoder }) => {
         const renderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -178,24 +172,22 @@ const Example: FC = () => {
           ],
         };
 
-        immediateRenderPass(device, "example", (encoder) => {
-          renderPass(encoder, renderPassDescriptor, (pass) => {
-            pass.setPipeline(pipeline);
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
+        pass.setPipeline(pipeline);
 
-            const aspect = canvas.width / canvas.height;
+        const aspect = canvas.width / canvas.height;
 
-            // set the scales for each object
-            objectInfos.forEach(({ scale }, ndx) => {
-              const offset = ndx * (changingUnitSize / 4);
-              storageValues.set([scale / aspect, scale], offset + kScaleOffset); // set the scale
-            });
-            // upload all scales at once
-            device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
-
-            pass.setBindGroup(0, bindGroup);
-            pass.draw(numVertices, kNumObjects);
-          });
+        // set the scales for each object
+        objectInfos.forEach(({ scale }, ndx) => {
+          const offset = ndx * (changingUnitSize / 4);
+          storageValues.set([scale / aspect, scale], offset + kScaleOffset); // set the scale
         });
+        // upload all scales at once
+        device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
+
+        pass.setBindGroup(0, bindGroup);
+        pass.draw(numVertices, kNumObjects);
+        pass.end();
       };
     },
     [presentationFormat]

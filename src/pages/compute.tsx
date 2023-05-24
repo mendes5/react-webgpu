@@ -2,7 +2,6 @@ import { type NextPage } from "next";
 import Head from "next/head";
 
 import { useMemo, type FC, useState } from "react";
-import { computePass, immediateRenderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { useAsyncAction } from "~/utils/hooks";
 import { ToOverlay } from "~/utils/overlay";
@@ -76,27 +75,31 @@ const Example: FC = () => {
       resultBuffer,
     },
     async ({ device, pipeline, bindGroup, workBuffer, resultBuffer }) => {
-      const computeDescriptor: GPUComputePassDescriptor = {
-        label: "our basic canvas renderPass",
-      };
-
       const start = performance.now();
 
-      immediateRenderPass(device, "doubling encoder", (encoder) => {
-        computePass(encoder, computeDescriptor, (pass) => {
-          pass.setPipeline(pipeline);
-          pass.setBindGroup(0, bindGroup);
-          pass.dispatchWorkgroups(input.length);
-        });
-
-        encoder.copyBufferToBuffer(
-          workBuffer,
-          0,
-          resultBuffer,
-          0,
-          resultBuffer.size
-        );
+      const encoder = device.createCommandEncoder({
+        label: "our basic canvas renderPass",
       });
+
+      const pass = encoder.beginComputePass({
+        label: "our basic canvas renderPass",
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.dispatchWorkgroups(input.length);
+      pass.end();
+
+      encoder.copyBufferToBuffer(
+        workBuffer,
+        0,
+        resultBuffer,
+        0,
+        resultBuffer.size
+      );
+
+      const commandBuffer = encoder.finish();
+
+      device.queue.submit([commandBuffer]);
 
       await resultBuffer.mapAsync(GPUMapMode.READ);
       // eslint-disable-next-line

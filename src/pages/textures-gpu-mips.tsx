@@ -7,14 +7,12 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useFrame } from "~/webgpu/per-frame";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useAsyncResource } from "~/utils/hooks";
 import { getSourceSize, loadImageBitmap, numMipLevels } from "~/utils/mips";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const renderMips = (device: GPUDevice, texture: GPUTexture) => {
   const shader = gpu.createShaderModule({
@@ -129,10 +127,6 @@ const Example: FC = () => {
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
-  const frameRef = useRef<(time: number) => void>();
-  useFrame((time) => {
-    frameRef.current?.(time);
-  });
   const presentationFormat = usePresentationFormat();
 
   const kMatrixOffset = 0;
@@ -324,7 +318,7 @@ const Example: FC = () => {
         objectInfos.push(info);
       }
 
-      frameRef.current = () => {
+      frame.main = ({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -337,56 +331,54 @@ const Example: FC = () => {
           ],
         };
 
-        immediateRenderPass(device, "triangle encoder", (encoder) => {
-          renderPass(encoder, renderPassDescriptor, (pass) => {
-            const fov = (60 * Math.PI) / 180; // 60 degrees in radians
-            const aspect = canvas.clientWidth / canvas.clientHeight;
-            const zNear = 1;
-            const zFar = 2000;
-            const projectionMatrix = mat4.perspective(fov, aspect, zNear, zFar);
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
+        const fov = (60 * Math.PI) / 180; // 60 degrees in radians
+        const aspect = canvas.clientWidth / canvas.clientHeight;
+        const zNear = 1;
+        const zFar = 2000;
+        const projectionMatrix = mat4.perspective(fov, aspect, zNear, zFar);
 
-            const cameraPosition: Vec3 = [0, 0, 2];
-            const up: Vec3 = [0, 1, 0];
-            const target: Vec3 = [0, 0, 0];
+        const cameraPosition: Vec3 = [0, 0, 2];
+        const up: Vec3 = [0, 1, 0];
+        const target: Vec3 = [0, 0, 0];
 
-            const cameraMatrix = mat4.lookAt(cameraPosition, target, up);
-            const viewMatrix = mat4.inverse(cameraMatrix);
-            const viewProjectionMatrix = mat4.multiply(
-              projectionMatrix,
-              viewMatrix
+        const cameraMatrix = mat4.lookAt(cameraPosition, target, up);
+        const viewMatrix = mat4.inverse(cameraMatrix);
+        const viewProjectionMatrix = mat4.multiply(
+          projectionMatrix,
+          viewMatrix
+        );
+
+        pass.setPipeline(pipeline);
+
+        objectInfos.forEach(
+          ({ bindGroups, matrix, uniformBuffer, uniformValues }, i) => {
+            const bindGroup = bindGroups[toggleRef.current]!;
+
+            const xSpacing = 1.2;
+            const ySpacing = 0.7;
+            const zDepth = 50;
+
+            const x = (i % 4) - 1.5;
+            const y = i < 4 ? 1 : -1;
+
+            mat4.translate(
+              viewProjectionMatrix,
+              [x * xSpacing, y * ySpacing, -zDepth * 0.5],
+              matrix
             );
+            mat4.rotateX(matrix, 0.5 * Math.PI, matrix);
+            mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
+            mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
 
-            pass.setPipeline(pipeline);
+            // copy the values from JavaScript to the GPU
+            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
-            objectInfos.forEach(
-              ({ bindGroups, matrix, uniformBuffer, uniformValues }, i) => {
-                const bindGroup = bindGroups[toggleRef.current]!;
-
-                const xSpacing = 1.2;
-                const ySpacing = 0.7;
-                const zDepth = 50;
-
-                const x = (i % 4) - 1.5;
-                const y = i < 4 ? 1 : -1;
-
-                mat4.translate(
-                  viewProjectionMatrix,
-                  [x * xSpacing, y * ySpacing, -zDepth * 0.5],
-                  matrix
-                );
-                mat4.rotateX(matrix, 0.5 * Math.PI, matrix);
-                mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
-                mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
-
-                // copy the values from JavaScript to the GPU
-                device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
-
-                pass.setBindGroup(0, bindGroup);
-                pass.draw(6); // call our vertex shader 6 times
-              }
-            );
-          });
-        });
+            pass.setBindGroup(0, bindGroup);
+            pass.draw(6); // call our vertex shader 6 times
+          }
+        );
+        pass.end();
       };
     },
     [presentationFormat]

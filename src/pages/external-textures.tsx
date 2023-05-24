@@ -1,18 +1,16 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { type FC, useState, useRef } from "react";
+import { type FC, useState } from "react";
 import {
   usePresentationFormat,
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useFrame } from "~/webgpu/per-frame";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { useAsyncResource } from "~/utils/hooks";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
 import { getSourceSize, loadImageBitmap } from "~/utils/mips";
 import { type H } from "~/utils/other";
 
@@ -39,11 +37,6 @@ const Example: FC = () => {
     () => loadImageBitmap("/resources/f-texture.png"),
     []
   );
-
-  const frameRef = useRef<(time: number) => void>();
-  useFrame((time) => {
-    frameRef.current?.(time);
-  });
 
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
@@ -163,7 +156,7 @@ const Example: FC = () => {
           ],
         });
 
-        frameRef.current = (time) => {
+        frame.main = ({ time, encoder }) => {
           time *= 0.001;
 
           const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -178,30 +171,28 @@ const Example: FC = () => {
             ],
           };
 
-          immediateRenderPass(device, "triangle encoder", (encoder) => {
-            renderPass(encoder, renderPassDescriptor, (pass) => {
-              if (bindGroup) {
-                pass.setPipeline(pipeline);
-                pass.setBindGroup(0, bindGroup);
+          const pass = encoder.beginRenderPass(renderPassDescriptor);
+          if (bindGroup) {
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
 
-                // compute a scale that will draw our 0 to 1 clip space quad
-                // 2x2 pixels in the canvas.
-                const scaleX = (4 / canvas.width) * 100;
-                const scaleY = (4 / canvas.height) * 100;
+            // compute a scale that will draw our 0 to 1 clip space quad
+            // 2x2 pixels in the canvas.
+            const scaleX = (4 / canvas.width) * 100;
+            const scaleY = (4 / canvas.height) * 100;
 
-                uniformValues.set([scaleX, scaleY], kScaleOffset); // set the scale
-                uniformValues.set(
-                  [Math.sin(time * 0.25) * 0.8, -0.8],
-                  kOffsetOffset
-                ); // set the offset
+            uniformValues.set([scaleX, scaleY], kScaleOffset); // set the scale
+            uniformValues.set(
+              [Math.sin(time * 0.25) * 0.8, -0.8],
+              kOffsetOffset
+            ); // set the offset
 
-                // copy the values from JavaScript to the GPU
-                device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+            // copy the values from JavaScript to the GPU
+            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
-                pass.draw(6);
-              }
-            });
-          });
+            pass.draw(6);
+          }
+          pass.end();
         };
       }
     },

@@ -1,25 +1,20 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useRef, type FC } from "react";
+import { type FC } from "react";
 import { usePresentationFormat, useWebGPUContext } from "~/webgpu/canvas";
-import { useFrame } from "~/webgpu/per-frame";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
 
   const context = useWebGPUContext();
 
-  const frameRef = useRef<(time: number) => void>();
-
-  useGPU(
-    ({ device }) => {
-      const shader = gpu.createShaderModule({
-        label: "our hardcoded red triangle shader",
-        code: /* wgsl */ `
+  useGPU(() => {
+    const shader = gpu.createShaderModule({
+      label: "our hardcoded red triangle shader",
+      code: /* wgsl */ `
           @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> @builtin(position) vec4f {
             var pos = array<vec2f, 3>(
               vec2f( 0.0,  0.5),
@@ -33,48 +28,41 @@ const Example: FC = () => {
             return vec4f(1.0, 0.0, 0.0, 1.0);
           }
         `,
-      });
+    });
 
-      const pipeline = gpu.createRenderPipeline({
-        label: "Main render pipeline",
-        layout: "auto",
-        vertex: {
-          module: shader,
-          entryPoint: "vsMain",
-        },
-        fragment: {
-          module: shader,
-          entryPoint: "fsMain",
-          targets: [{ format: presentationFormat }],
-        },
-      });
+    const pipeline = gpu.createRenderPipeline({
+      label: "Main render pipeline",
+      layout: "auto",
+      vertex: {
+        module: shader,
+        entryPoint: "vsMain",
+      },
+      fragment: {
+        module: shader,
+        entryPoint: "fsMain",
+        targets: [{ format: presentationFormat }],
+      },
+    });
 
-      frameRef.current = () => {
-        const renderPassDescriptor: GPURenderPassDescriptor = {
-          label: "our basic canvas renderPass",
-          colorAttachments: [
-            {
-              view: context.getCurrentTexture().createView(),
-              clearValue: [0.0, 0.0, 0.1, 1],
-              loadOp: "clear",
-              storeOp: "store",
-            },
-          ],
-        };
-        immediateRenderPass(device, "triangle encoder", (encoder) => {
-          renderPass(encoder, renderPassDescriptor, (pass) => {
-            pass.setPipeline(pipeline);
-            pass.draw(3);
-          });
-        });
+    frame.main = ({ encoder }) => {
+      const renderPassDescriptor: GPURenderPassDescriptor = {
+        label: "our basic canvas renderPass",
+        colorAttachments: [
+          {
+            view: context.getCurrentTexture().createView(),
+            clearValue: [0.0, 0.0, 0.1, 1],
+            loadOp: "clear",
+            storeOp: "store",
+          },
+        ],
       };
-    },
-    [presentationFormat]
-  );
 
-  useFrame((time) => {
-    frameRef.current?.(time);
-  });
+      const pass = encoder.beginRenderPass(renderPassDescriptor);
+      pass.setPipeline(pipeline);
+      pass.draw(3);
+      pass.end();
+    };
+  }, [presentationFormat]);
 
   return null;
 };

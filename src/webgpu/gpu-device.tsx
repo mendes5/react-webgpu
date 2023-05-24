@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   type PropsWithChildren,
+  useRef,
 } from "react";
 import { useIsClient, useIsMounted } from "usehooks-ts";
 import { requestAdapter } from "./calls";
@@ -13,6 +14,7 @@ import { match } from "ts-pattern";
 import { log } from "./logger";
 import { ToOverlay } from "~/utils/overlay";
 import { type H, shortId } from "~/utils/other";
+import { type FrameBag, GPURendererContext } from "./use-gpu";
 
 const GPUDeviceContext = createContext<H<GPUDevice> | null>(null);
 
@@ -29,12 +31,14 @@ export const useGPUDevice = (): H<GPUDevice> | null => {
 type Props = {
   fallback?: ReactNode | undefined;
   loading?: ReactNode | undefined;
+  render?: boolean;
 };
 
 export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
   children,
   fallback,
   loading,
+  render = true,
 }) => {
   const isMounted = useIsMounted();
 
@@ -73,6 +77,44 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
 
   const isClient = useIsClient();
 
+  const frameRef = useRef<Map<string, (bag: FrameBag) => void>>();
+
+  const animationFrameRef = useRef(-1);
+
+  if (!frameRef.current) {
+    frameRef.current = new Map();
+  }
+
+  useEffect(() => {
+    if (asyncDeviceState.type !== "success") return;
+
+    const device = asyncDeviceState.value;
+
+    if (render) {
+      const renderCb = (time: number) => {
+        const encoder = device.createCommandEncoder({
+          label: "Main render loop encoder",
+        });
+
+        [...frameRef.current!.values()].forEach((fn) => {
+          fn({ time, encoder });
+        });
+
+        const commandBuffer = encoder.finish();
+
+        device.queue.submit([commandBuffer]);
+
+        animationFrameRef.current = requestAnimationFrame(renderCb);
+      };
+
+      animationFrameRef.current = requestAnimationFrame(renderCb);
+
+      return () => {
+        cancelAnimationFrame(animationFrameRef.current);
+      };
+    }
+  }, [render, asyncDeviceState]);
+
   if (!isClient) {
     return null;
   }
@@ -82,19 +124,25 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
       {match(asyncDeviceState)
         .with({ type: "pending" }, () => (
           <GPUDeviceContext.Provider value={null}>
-            {children}
+            <GPURendererContext.Provider value={frameRef.current!}>
+              {children}
+            </GPURendererContext.Provider>
             {loading}
           </GPUDeviceContext.Provider>
         ))
         .with({ type: "error" }, () => (
           <GPUDeviceContext.Provider value={null}>
-            {children}
+            <GPURendererContext.Provider value={frameRef.current!}>
+              {children}
+            </GPURendererContext.Provider>
             {fallback}
           </GPUDeviceContext.Provider>
         ))
         .with({ type: "success" }, ({ value }) => (
           <GPUDeviceContext.Provider value={value}>
-            {children}
+            <GPURendererContext.Provider value={frameRef.current!}>
+              {children}
+            </GPURendererContext.Provider>
           </GPUDeviceContext.Provider>
         ))
         .exhaustive()}

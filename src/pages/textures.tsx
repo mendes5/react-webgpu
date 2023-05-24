@@ -7,11 +7,9 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useFrame } from "~/webgpu/per-frame";
-import { immediateRenderPass, renderPass } from "~/webgpu/calls";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",
@@ -52,10 +50,6 @@ const Example: FC = () => {
     return { textureData, kTextureWidth, kTextureHeight };
   }, []);
 
-  const frameRef = useRef<(time: number) => void>();
-  useFrame((time) => {
-    frameRef.current?.(time);
-  });
   const canvas = useWebGPUCanvas();
 
   const presentationFormat = usePresentationFormat();
@@ -167,7 +161,7 @@ const Example: FC = () => {
         ],
       });
 
-      frameRef.current = (time) => {
+      frame.main = ({ time, encoder }) => {
         time *= 0.001;
 
         const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -182,28 +176,23 @@ const Example: FC = () => {
           ],
         };
 
-        immediateRenderPass(device, "triangle encoder", (encoder) => {
-          renderPass(encoder, renderPassDescriptor, (pass) => {
-            pass.setPipeline(pipeline);
-            pass.setBindGroup(0, bindGroup);
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
 
-            // compute a scale that will draw our 0 to 1 clip space quad
-            // 2x2 pixels in the canvas.
-            const scaleX = (4 / canvas.width) * scaleRef.current;
-            const scaleY = (4 / canvas.height) * scaleRef.current;
+        // compute a scale that will draw our 0 to 1 clip space quad
+        // 2x2 pixels in the canvas.
+        const scaleX = (4 / canvas.width) * scaleRef.current;
+        const scaleY = (4 / canvas.height) * scaleRef.current;
 
-            uniformValues.set([scaleX, scaleY], kScaleOffset); // set the scale
-            uniformValues.set(
-              [Math.sin(time * 0.25) * 0.8, -0.8],
-              kOffsetOffset
-            ); // set the offset
+        uniformValues.set([scaleX, scaleY], kScaleOffset); // set the scale
+        uniformValues.set([Math.sin(time * 0.25) * 0.8, -0.8], kOffsetOffset); // set the offset
 
-            // copy the values from JavaScript to the GPU
-            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+        // copy the values from JavaScript to the GPU
+        device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
-            pass.draw(6);
-          });
-        });
+        pass.draw(6);
+        pass.end();
       };
     },
     [presentationFormat, modeU, modeV, magFilter, minFilter]
