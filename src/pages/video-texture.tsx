@@ -172,7 +172,7 @@ const Example: FC = () => {
         objectInfos.push(info);
       }
 
-      frame.main = ({ encoder }) => {
+      frame.main!(({ encoder }) => {
         updateTexture();
 
         const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -232,7 +232,7 @@ const Example: FC = () => {
           }
         );
         pass.end();
-      };
+      });
     },
     [presentationFormat]
   );

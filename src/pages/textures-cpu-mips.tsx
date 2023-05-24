@@ -157,7 +157,7 @@ const Example: FC = () => {
         objectInfos.push(a);
       }
 
-      frame.main = ({ encoder }) => {
+      frame.main!(({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -219,7 +219,8 @@ const Example: FC = () => {
         );
 
         pass.end();
-      };
+        // TODO:: ref mutation should re-render this
+      });
     },
     [presentationFormat]
   );

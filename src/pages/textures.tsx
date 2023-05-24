@@ -161,7 +161,7 @@ const Example: FC = () => {
         ],
       });
 
-      frame.main = ({ time, encoder }) => {
+      frame.main!(({ time, encoder }) => {
         time *= 0.001;
 
         const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -193,7 +193,7 @@ const Example: FC = () => {
 
         pass.draw(6);
         pass.end();
-      };
+      });
     },
     [presentationFormat, modeU, modeV, magFilter, minFilter]
   );

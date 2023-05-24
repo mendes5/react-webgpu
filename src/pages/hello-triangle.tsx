@@ -44,7 +44,7 @@ const Example: FC = () => {
       },
     });
 
-    frame.main = ({ encoder }) => {
+    frame.main!(({ encoder }) => {
       const renderPassDescriptor: GPURenderPassDescriptor = {
         label: "our basic canvas renderPass",
         colorAttachments: [
@@ -61,7 +61,7 @@ const Example: FC = () => {
       pass.setPipeline(pipeline);
       pass.draw(3);
       pass.end();
-    };
+    }, []);
   }, [presentationFormat]);
 
   return null;

@@ -195,7 +195,7 @@ const Example: FC = () => {
         }
       });
 
-      frame.main = ({ encoder }) => {
+      frame.main!(({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -223,7 +223,8 @@ const Example: FC = () => {
         pass.setBindGroup(0, bindGroup);
         pass.draw(numVertices, objectCountRef.current);
         pass.end();
-      };
+        // TODO:: ref mutation should rerender
+      });
 
       return randomize;
     },

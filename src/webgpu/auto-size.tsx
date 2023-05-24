@@ -1,14 +1,18 @@
 import { useEffect, useRef } from "react";
-import { useGPUDevice } from "./gpu-device";
+import { useForceReRender, useGPUDevice } from "./gpu-device";
 
 export const useAutoSize = (downscale = 0) => {
   const device = useGPUDevice();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  const rerender = useForceReRender();
+
   useEffect(() => {
     if (device) {
       const observer = new ResizeObserver((entries) => {
+        rerender();
+
         for (const entry of entries) {
           if (!entry.contentBoxSize[0]) continue;
 
@@ -41,7 +45,7 @@ export const useAutoSize = (downscale = 0) => {
         observer.disconnect();
       };
     }
-  }, [device, downscale]);
+  }, [rerender, device, downscale]);
 
   return canvasRef;
 };

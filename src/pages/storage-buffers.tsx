@@ -159,7 +159,7 @@ const Example: FC = () => {
         ],
       });
 
-      frame.main = ({ encoder }) => {
+      frame.main!(({ encoder }) => {
         const renderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -188,7 +188,7 @@ const Example: FC = () => {
         pass.setBindGroup(0, bindGroup);
         pass.draw(numVertices, kNumObjects);
         pass.end();
-      };
+      }, []);
     },
     [presentationFormat]
   );

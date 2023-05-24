@@ -6,6 +6,7 @@ import {
   useEffect,
   type PropsWithChildren,
   useRef,
+  useCallback,
 } from "react";
 import { useIsClient, useIsMounted } from "usehooks-ts";
 import { requestAdapter } from "./calls";
@@ -15,13 +16,17 @@ import { log } from "./logger";
 import { ToOverlay } from "~/utils/overlay";
 import { type H, shortId } from "~/utils/other";
 import {
-  type FrameBag,
   GPURendererContext,
   type ActionBag,
   GPUActionContext,
+  type FrameCallback,
 } from "./use-gpu";
 
+const ReRenderContext = createContext((): void => undefined);
+
 const GPUDeviceContext = createContext<H<GPUDevice> | null>(null);
+
+export const useForceReRender = () => useContext(ReRenderContext);
 
 export const useGPUDevice = (): H<GPUDevice> | null => {
   const device = useContext(GPUDeviceContext);
@@ -82,7 +87,7 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
 
   const isClient = useIsClient();
 
-  const frameRef = useRef<Map<string, (bag: FrameBag) => void>>();
+  const frameRef = useRef<Map<string, FrameCallback>>();
   const actionRef = useRef<Set<(bag: ActionBag) => Promise<unknown>>>();
 
   const animationFrameRef = useRef(-1);
@@ -94,6 +99,14 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
     actionRef.current = new Set();
   }
 
+  const forceReRender = useCallback(() => {
+    const frames = [...frameRef.current!.values()];
+
+    for (const frame of frames) {
+      frame.enabled = true;
+    }
+  }, []);
+
   useEffect(() => {
     if (asyncDeviceState.type !== "success") return;
 
@@ -101,27 +114,41 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
 
     if (render) {
       const renderCb = (time: number) => {
-        const encoder = device.createCommandEncoder({
-          label: "Main render loop encoder",
-        });
+        const actions = [...actionRef.current!.values()];
+        const frames = [...frameRef.current!.values()];
 
-        let finishRender = (_: number | PromiseLike<number>): void => undefined;
+        if (actions.length || frames.filter((x) => x.enabled).length) {
+          const encoder = device.createCommandEncoder({
+            label: "Main render loop encoder",
+          });
 
-        const renderToken = new Promise<number>((res) => (finishRender = res));
+          let finishRender = (_: number | PromiseLike<number>): void =>
+            undefined;
 
-        for (const action of actionRef.current!.values()) {
-          action({ time, encoder, renderToken }).catch(console.error);
-          actionRef.current!.delete(action);
+          const renderToken = new Promise<number>(
+            (res) => (finishRender = res)
+          );
+
+          for (const action of actions) {
+            action({ time, encoder, renderToken }).catch(console.error);
+            actionRef.current!.delete(action);
+          }
+
+          for (const frame of frames) {
+            if (frame.enabled) {
+              frame.callback({ time, encoder });
+            }
+            if (frame.kind === "once") {
+              frame.enabled = false;
+            }
+          }
+
+          const commandBuffer = encoder.finish();
+
+          device.queue.submit([commandBuffer]);
+
+          finishRender(performance.now());
         }
-
-        for (const frame of frameRef.current!.values())
-          frame({ time, encoder });
-
-        const commandBuffer = encoder.finish();
-
-        device.queue.submit([commandBuffer]);
-
-        finishRender(performance.now());
 
         animationFrameRef.current = requestAnimationFrame(renderCb);
       };
@@ -145,7 +172,9 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
           <GPUDeviceContext.Provider value={null}>
             <GPURendererContext.Provider value={frameRef.current!}>
               <GPUActionContext.Provider value={actionRef.current!}>
-                {children}
+                <ReRenderContext.Provider value={forceReRender}>
+                  {children}
+                </ReRenderContext.Provider>
               </GPUActionContext.Provider>
             </GPURendererContext.Provider>
             {loading}
@@ -155,7 +184,9 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
           <GPUDeviceContext.Provider value={null}>
             <GPURendererContext.Provider value={frameRef.current!}>
               <GPUActionContext.Provider value={actionRef.current!}>
-                {children}
+                <ReRenderContext.Provider value={forceReRender}>
+                  {children}
+                </ReRenderContext.Provider>
               </GPUActionContext.Provider>
             </GPURendererContext.Provider>
             {fallback}
@@ -165,7 +196,9 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
           <GPUDeviceContext.Provider value={value}>
             <GPURendererContext.Provider value={frameRef.current!}>
               <GPUActionContext.Provider value={actionRef.current!}>
-                {children}
+                <ReRenderContext.Provider value={forceReRender}>
+                  {children}
+                </ReRenderContext.Provider>
               </GPUActionContext.Provider>
             </GPURendererContext.Provider>
           </GPUDeviceContext.Provider>

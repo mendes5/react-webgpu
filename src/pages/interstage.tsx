@@ -174,27 +174,30 @@ const Example: FC = () => {
       },
     });
 
-    frame.main = ({ encoder }) => {
-      const renderPassDescriptor: GPURenderPassDescriptor = {
-        label: "our basic canvas  renderPass",
-        colorAttachments: [
-          // This is the location(0)
-          // since we use context.getCurrentTexture as the view
-          // it will render to the canvas
-          {
-            view: context.getCurrentTexture().createView(),
-            clearValue: [0.0, 0.0, 0.0, 1],
-            loadOp: "clear",
-            storeOp: "store",
-          },
-        ],
-      };
+    frame.main!(
+      ({ encoder }) => {
+        const renderPassDescriptor: GPURenderPassDescriptor = {
+          label: "our basic canvas  renderPass",
+          colorAttachments: [
+            // This is the location(0)
+            // since we use context.getCurrentTexture as the view
+            // it will render to the canvas
+            {
+              view: context.getCurrentTexture().createView(),
+              clearValue: [0.0, 0.0, 0.0, 1],
+              loadOp: "clear",
+              storeOp: "store",
+            },
+          ],
+        };
 
-      const pass = encoder.beginRenderPass(renderPassDescriptor);
-      pass.setPipeline(pipeline);
-      pass.draw(3);
-      pass.end();
-    };
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
+        pass.setPipeline(pipeline);
+        pass.draw(3);
+        pass.end();
+      },
+      [value, type, presentationFormat, sampling]
+    );
   }, [value, type, presentationFormat, sampling]);
 
   return (

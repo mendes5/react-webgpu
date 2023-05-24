@@ -19,7 +19,7 @@ export function createCircleVerticesIndexed({
   startAngle = 0,
   endAngle = Math.PI * 2,
 } = {}) {
-  // 2 triangles per subdivision, 3 verts per tri, 2 values (xy) each.
+  // 2 triangles per subdivision, 3 verticess per tri, 2 values (xy) each.
   const numVertices = numSubdivisions * 3 * 2;
   const vertexData = new Float32Array(numVertices * (2 + 3));
 
@@ -269,7 +269,8 @@ const Example: FC = () => {
         }
       };
 
-      frame.main = ({ encoder }) => {
+      frame.main!(({ encoder }) => {
+        console.log("render");
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -296,9 +297,9 @@ const Example: FC = () => {
         device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
 
         pass.setBindGroup(0, bindGroup);
-        pass.drawIndexed(numVertices, objectCountRef.current);
+        pass.drawIndexed(numVertices, objectCountRef.current ?? 10);
         pass.end();
-      };
+      }, []);
 
       return randomize;
     },

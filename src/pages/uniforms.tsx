@@ -139,7 +139,7 @@ const Example: FC = () => {
         }
       });
 
-      frame.main = ({ encoder }) => {
+      frame.main!(({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -169,7 +169,8 @@ const Example: FC = () => {
           pass.draw(3);
         }
         pass.end();
-      };
+        // TODO:: action execution should rerender
+      });
 
       return randomize;
     },

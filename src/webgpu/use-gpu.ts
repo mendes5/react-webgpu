@@ -117,9 +117,15 @@ export type ActionBag = {
   renderToken: Promise<number>;
 };
 
-export const GPURendererContext = createContext<
-  Map<string, (bag: FrameBag) => void>
->(new Map());
+export type FrameCallback = {
+  callback: (bag: FrameBag) => void;
+  enabled: boolean;
+  kind: "once" | "loop";
+};
+
+export const GPURendererContext = createContext<Map<string, FrameCallback>>(
+  new Map()
+);
 
 export const GPUActionContext = createContext<Set<(bag: ActionBag) => unknown>>(
   new Set()
@@ -141,7 +147,11 @@ const stubRendererProxy: FrameAPI = {
 };
 
 type FrameAPI = {
-  useFrame: (key: string, callback: (bag: FrameBag) => void) => void;
+  useFrame: (
+    key: string,
+    callback: (bag: FrameBag) => void,
+    deps?: unknown[]
+  ) => void;
   useAction: (
     callback: (bag: ActionBag, arg?: unknown) => Promise<unknown>
   ) => (arg?: unknown) => Promise<unknown>;
@@ -158,20 +168,45 @@ export function action<T>(
   return rendererProxy.useAction(callback);
 }
 
-export const frame: Record<string, (bag: FrameBag) => void> = new Proxy(
+export const frame: Record<
+  string,
+  (callback: (bag: FrameBag) => void, deps?: unknown[]) => void
+> = new Proxy(
   {},
   {
-    set(_, p, newValue: (bag: FrameBag) => void) {
-      if (typeof p === "symbol") {
-        throw new Error("Nah");
-      }
+    get(_, p) {
+      return (callback: (bag: FrameBag) => void, deps?: unknown[]) => {
+        if (typeof p === "symbol") {
+          throw new Error("Nah");
+        }
 
-      rendererProxy.useFrame(p, newValue);
-
-      return true;
+        rendererProxy.useFrame(p, callback, deps);
+      };
     },
   }
 );
+
+const isSameDependencies = (
+  prev: unknown[] | undefined,
+  next: unknown[] | undefined
+) => {
+  let valid = true;
+  if (next === undefined && prev === undefined) return true;
+  if (prev === undefined) valid = false;
+  if (next != null && prev != null) {
+    if (next === prev) return true;
+
+    const n = prev.length || 0;
+    if (n !== next.length || 0) valid = false;
+    else
+      for (let i = 0; i < n; ++i)
+        if (prev[i] !== next[i]) {
+          valid = false;
+          break;
+        }
+  }
+  return valid;
+};
 
 export const gpu: GPU_API = {
   createBuffer: (desc) => GPUProxy.createBuffer(desc),
@@ -235,6 +270,12 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
 
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
+
+  const depsRef = useRef<Map<string, unknown[]>>();
+
+  if (!depsRef.current) {
+    depsRef.current = new Map();
+  }
 
   useEffect(
     () => () => {
@@ -460,10 +501,27 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
 
       const unusedFrames = new Set([...currentFrames.keys()]);
 
-      rendererProxy.useFrame = (key, callback) => {
+      rendererProxy.useFrame = (key, callback, deps) => {
         const ownKey = `${key}@${id}`;
         unusedFrames.delete(ownKey);
-        rendererContext.set(ownKey, callback);
+
+        const hasDeps = Array.isArray(deps);
+
+        if (hasDeps) {
+          const isFirstRender = !depsRef.current!.has(ownKey);
+          const lastDeps = depsRef.current!.get(ownKey);
+
+          const areSame = isSameDependencies(deps, lastDeps);
+          const enabled = !areSame || isFirstRender;
+
+          rendererContext.set(ownKey, { callback, enabled, kind: "once" });
+        } else {
+          rendererContext.set(ownKey, {
+            callback,
+            enabled: true,
+            kind: "loop",
+          });
+        }
       };
       rendererProxy.useAction = (callback) => {
         return (arg) => {

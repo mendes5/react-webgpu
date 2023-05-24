@@ -163,7 +163,7 @@ const Example: FC = () => {
         };
       });
 
-      frame.main = ({ time, encoder }) => {
+      frame.main!(({ time, encoder }) => {
         updateCanvas(time);
         device.queue.copyExternalImageToTexture(
           { source: ctx.canvas, flipY: true },
@@ -232,7 +232,7 @@ const Example: FC = () => {
         );
 
         pass.end();
-      };
+      });
     },
     [presentationFormat, mips]
   );
