@@ -11,16 +11,13 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { createCircleVertices } from "~/utils/geometry";
-import { useAction } from "~/utils/hooks";
-import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { action, frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
   const presentationFormat = usePresentationFormat();
-
-  const actionRef = useRef<() => void>();
 
   const kScaleOffset = 0;
 
@@ -46,7 +43,7 @@ const Example: FC = () => {
 
   const objectCountRef = useRef(kNumObjects);
 
-  useGPU(
+  const randomize = useGPU(
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Vertex buffer example shader",
@@ -182,7 +179,7 @@ const Example: FC = () => {
         ],
       });
 
-      actionRef.current = () => {
+      const randomize = action(async () => {
         for (const i of range(kNumObjects)) {
           const staticOffset = i * (staticUnitSize / 4);
 
@@ -196,7 +193,7 @@ const Example: FC = () => {
           );
           device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
         }
-      };
+      });
 
       frame.main = ({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -227,11 +224,11 @@ const Example: FC = () => {
         pass.draw(numVertices, objectCountRef.current);
         pass.end();
       };
+
+      return randomize;
     },
     [presentationFormat]
   );
-
-  const randomize = useAction({}, () => actionRef.current?.(), []);
 
   const spanRef = useRef<HTMLSpanElement>(null);
 
@@ -239,8 +236,8 @@ const Example: FC = () => {
     <ToOverlay>
       <button
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
-        onClick={randomize.execute}
-        disabled={randomize.locked}
+        onClick={randomize}
+        disabled={!randomize}
       >
         Randomize
       </button>

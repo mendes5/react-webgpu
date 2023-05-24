@@ -6,14 +6,14 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { useAsyncAction } from "~/utils/hooks";
 import { ToOverlay } from "~/utils/overlay";
 import { useToggle } from "usehooks-ts";
-import { gpu, useGPU } from "~/webgpu/use-gpu";
+import { action, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const input = useMemo(() => new Float32Array([1, 3, 5, 5, 9, 7, 4, 5]), []);
 
   const [label, toggleLabel] = useToggle();
 
-  const { bindGroup, workBuffer, resultBuffer, pipeline, device } = useGPU(
+  const double = useGPU(
     ({ device }) => {
       const shader = gpu.createShaderModule({
         code: /* wgsl */ `
@@ -61,56 +61,42 @@ const Example: FC = () => {
         entries: [{ binding: 0, resource: { buffer: workBuffer } }],
       });
 
-      return { device, bindGroup, workBuffer, resultBuffer, pipeline };
+      const double = action(async ({ encoder, renderToken, time: start }) => {
+        const pass = encoder.beginComputePass({
+          label: "compute pass",
+        });
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.dispatchWorkgroups(input.length);
+        pass.end();
+        encoder.copyBufferToBuffer(
+          workBuffer,
+          0,
+          resultBuffer,
+          0,
+          resultBuffer.size
+        );
+
+        const end = await renderToken;
+
+        await resultBuffer.mapAsync(GPUMapMode.READ);
+        // eslint-disable-next-line
+        // @ts-ignore
+        const result = new Float32Array(resultBuffer.getMappedRange().slice());
+        resultBuffer.unmap();
+
+        return { input, result, elapsed: end - start };
+      });
+
+      return double;
     },
     [label]
   );
 
+  // this gotta go
   const { execute, locked } = useAsyncAction(
-    {
-      device,
-      pipeline,
-      bindGroup,
-      workBuffer,
-      resultBuffer,
-    },
-    async ({ device, pipeline, bindGroup, workBuffer, resultBuffer }) => {
-      const start = performance.now();
-
-      const encoder = device.createCommandEncoder({
-        label: "our basic canvas renderPass",
-      });
-
-      const pass = encoder.beginComputePass({
-        label: "our basic canvas renderPass",
-      });
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.dispatchWorkgroups(input.length);
-      pass.end();
-
-      encoder.copyBufferToBuffer(
-        workBuffer,
-        0,
-        resultBuffer,
-        0,
-        resultBuffer.size
-      );
-
-      const commandBuffer = encoder.finish();
-
-      device.queue.submit([commandBuffer]);
-
-      await resultBuffer.mapAsync(GPUMapMode.READ);
-      // eslint-disable-next-line
-      // @ts-ignore
-      const result = new Float32Array(resultBuffer.getMappedRange().slice());
-      resultBuffer.unmap();
-
-      const end = performance.now();
-
-      return { input, result, elapsed: end - start };
-    },
+    { double },
+    async ({ double }) => double(),
     []
   );
 

@@ -10,8 +10,7 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
-import { useAction } from "~/utils/hooks";
-import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { action, frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 export function createCircleVerticesSeparate({
   radius = 1,
@@ -93,11 +92,9 @@ const Example: FC = () => {
 
   const presentationFormat = usePresentationFormat();
 
-  const actionRef = useRef<() => void>();
-
   const objectCountRef = useRef(kNumObjects);
 
-  useGPU(
+  const randomize = useGPU(
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Separate vertex buffers",
@@ -110,8 +107,6 @@ const Example: FC = () => {
       struct OtherStruct {
         scale: vec2f,
       };
-
-
 
       struct VSOutput {
         @builtin(position) position: vec4f,
@@ -243,7 +238,7 @@ const Example: FC = () => {
         ],
       });
 
-      actionRef.current = () => {
+      const randomize = action(async () => {
         for (const i of range(kNumObjects)) {
           const staticOffset = i * (staticUnitSize / 4);
 
@@ -257,7 +252,7 @@ const Example: FC = () => {
           );
           device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
         }
-      };
+      });
 
       frame.main = ({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -289,11 +284,10 @@ const Example: FC = () => {
         pass.draw(numVertices, objectCountRef.current);
         pass.end();
       };
+      return randomize;
     },
     [presentationFormat]
   );
-
-  const { locked, execute } = useAction({}, () => actionRef.current?.(), []);
 
   const spanRef = useRef<HTMLSpanElement>(null);
 
@@ -301,8 +295,8 @@ const Example: FC = () => {
     <ToOverlay>
       <button
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
-        disabled={locked}
-        onClick={execute}
+        disabled={!randomize}
+        onClick={randomize}
       >
         Randomize
       </button>

@@ -1,7 +1,7 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useRef, type FC } from "react";
+import { type FC } from "react";
 import {
   usePresentationFormat,
   useWebGPUCanvas,
@@ -10,8 +10,7 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
-import { useAction } from "~/utils/hooks";
-import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { action, frame, gpu, useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const canvas = useWebGPUCanvas();
@@ -23,9 +22,7 @@ const Example: FC = () => {
   const kOffsetOffset = 4;
   const kScaleOffset = 0;
 
-  const actionRef = useRef<() => void>();
-
-  useGPU(
+  const randomize = useGPU(
     ({ device }) => {
       const shader = gpu.createShaderModule({
         label: "Uniforms example",
@@ -134,13 +131,13 @@ const Example: FC = () => {
         objectInfos.push(out);
       }
 
-      actionRef.current = () => {
+      const randomize = action(async () => {
         for (const { staticValues, staticUniformBuffer } of objectInfos) {
           staticValues.set([rand(), rand(), rand(), 1], kColorOffset);
           staticValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], kOffsetOffset);
           device.queue.writeBuffer(staticUniformBuffer, 0, staticValues);
         }
-      };
+      });
 
       frame.main = ({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -173,18 +170,18 @@ const Example: FC = () => {
         }
         pass.end();
       };
+
+      return randomize;
     },
     [presentationFormat]
   );
-
-  const { locked, execute } = useAction({}, () => actionRef.current?.(), []);
 
   return (
     <ToOverlay>
       <button
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
-        disabled={locked}
-        onClick={execute}
+        disabled={!randomize}
+        onClick={randomize}
       >
         Randomize
       </button>

@@ -111,9 +111,19 @@ export type FrameBag = {
   encoder: GPUCommandEncoder;
 };
 
+export type ActionBag = {
+  time: number;
+  encoder: GPUCommandEncoder;
+  renderToken: Promise<number>;
+};
+
 export const GPURendererContext = createContext<
   Map<string, (bag: FrameBag) => void>
 >(new Map());
+
+export const GPUActionContext = createContext<Set<(bag: ActionBag) => unknown>>(
+  new Set()
+);
 
 const GPUProxy = Object.assign({}, stubGPUProxy);
 
@@ -123,13 +133,30 @@ const stubRendererProxy: FrameAPI = {
       "Tried to create a frame callback outside the rendering cycle of useGPU."
     );
   },
+  useAction: () => {
+    throw new Error(
+      "Tried to create a action outside the rendering cycle of useGPU."
+    );
+  },
 };
 
 type FrameAPI = {
-  useFrame: (key: string, callback: (time: FrameBag) => void) => void;
+  useFrame: (key: string, callback: (bag: FrameBag) => void) => void;
+  useAction: (
+    callback: (bag: ActionBag, arg?: unknown) => Promise<unknown>
+  ) => (arg?: unknown) => Promise<unknown>;
 };
 
 const rendererProxy = Object.assign({}, stubRendererProxy);
+
+export function action<T>(
+  callback: (bag: ActionBag) => Promise<T>
+): () => Promise<T> {
+  // Shhhhhh
+  // eslint-disable-next-line
+  // @ts-ignore
+  return rendererProxy.useAction(callback);
+}
 
 export const frame: Record<string, (bag: FrameBag) => void> = new Proxy(
   {},
@@ -204,6 +231,7 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
   const currentFramesRef = useRef<Set<string>>();
 
   const rendererContext = useContext(GPURendererContext);
+  const actionContext = useContext(GPUActionContext);
 
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
@@ -437,6 +465,25 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
         unusedFrames.delete(ownKey);
         rendererContext.set(ownKey, callback);
       };
+      rendererProxy.useAction = (callback) => {
+        return (arg) => {
+          const promise = {
+            resolve: (_: unknown): void => undefined,
+            reject: (_: unknown): void => undefined,
+          };
+
+          const token = new Promise((res, rej) => {
+            promise.resolve = res;
+            promise.reject = rej;
+          });
+
+          actionContext.add(async (bag) =>
+            callback(bag, arg).then(promise.resolve).catch(promise.reject)
+          );
+
+          return token;
+        };
+      };
 
       const out = callbackRef.current({ ...bag, device });
 
@@ -480,7 +527,7 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
         fromCache.destroy();
       });
 
-      setResult(out ?? undefined);
+      setResult(() => out ?? undefined);
     },
     () => {
       setResult(undefined);

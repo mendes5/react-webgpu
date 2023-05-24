@@ -14,7 +14,12 @@ import { match } from "ts-pattern";
 import { log } from "./logger";
 import { ToOverlay } from "~/utils/overlay";
 import { type H, shortId } from "~/utils/other";
-import { type FrameBag, GPURendererContext } from "./use-gpu";
+import {
+  type FrameBag,
+  GPURendererContext,
+  type ActionBag,
+  GPUActionContext,
+} from "./use-gpu";
 
 const GPUDeviceContext = createContext<H<GPUDevice> | null>(null);
 
@@ -78,11 +83,15 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
   const isClient = useIsClient();
 
   const frameRef = useRef<Map<string, (bag: FrameBag) => void>>();
+  const actionRef = useRef<Set<(bag: ActionBag) => Promise<unknown>>>();
 
   const animationFrameRef = useRef(-1);
 
   if (!frameRef.current) {
     frameRef.current = new Map();
+  }
+  if (!actionRef.current) {
+    actionRef.current = new Set();
   }
 
   useEffect(() => {
@@ -96,13 +105,23 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
           label: "Main render loop encoder",
         });
 
-        [...frameRef.current!.values()].forEach((fn) => {
-          fn({ time, encoder });
-        });
+        let finishRender = (_: number | PromiseLike<number>): void => undefined;
+
+        const renderToken = new Promise<number>((res) => (finishRender = res));
+
+        for (const action of actionRef.current!.values()) {
+          action({ time, encoder, renderToken }).catch(console.error);
+          actionRef.current!.delete(action);
+        }
+
+        for (const frame of frameRef.current!.values())
+          frame({ time, encoder });
 
         const commandBuffer = encoder.finish();
 
         device.queue.submit([commandBuffer]);
+
+        finishRender(performance.now());
 
         animationFrameRef.current = requestAnimationFrame(renderCb);
       };
@@ -125,7 +144,9 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
         .with({ type: "pending" }, () => (
           <GPUDeviceContext.Provider value={null}>
             <GPURendererContext.Provider value={frameRef.current!}>
-              {children}
+              <GPUActionContext.Provider value={actionRef.current!}>
+                {children}
+              </GPUActionContext.Provider>
             </GPURendererContext.Provider>
             {loading}
           </GPUDeviceContext.Provider>
@@ -133,7 +154,9 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
         .with({ type: "error" }, () => (
           <GPUDeviceContext.Provider value={null}>
             <GPURendererContext.Provider value={frameRef.current!}>
-              {children}
+              <GPUActionContext.Provider value={actionRef.current!}>
+                {children}
+              </GPUActionContext.Provider>
             </GPURendererContext.Provider>
             {fallback}
           </GPUDeviceContext.Provider>
@@ -141,7 +164,9 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
         .with({ type: "success" }, ({ value }) => (
           <GPUDeviceContext.Provider value={value}>
             <GPURendererContext.Provider value={frameRef.current!}>
-              {children}
+              <GPUActionContext.Provider value={actionRef.current!}>
+                {children}
+              </GPUActionContext.Provider>
             </GPURendererContext.Provider>
           </GPUDeviceContext.Provider>
         ))
