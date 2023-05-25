@@ -6,7 +6,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { useAsyncAction } from "~/utils/hooks";
 import { ToOverlay } from "~/utils/overlay";
 import { useToggle } from "usehooks-ts";
-import { action, gpu, useGPU } from "~/webgpu/use-gpu";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const input = useMemo(() => new Float32Array([1, 3, 5, 5, 9, 7, 4, 5]), []);
@@ -14,7 +14,7 @@ const Example: FC = () => {
   const [label, toggleLabel] = useToggle();
 
   const double = useGPU(
-    ({ device }) => {
+    async ({ device, action, gpu }) => {
       const shader = gpu.createShaderModule({
         code: /* wgsl */ `
           @group(0) @binding(0) var<storage, read_write> data: array<f32>;
@@ -29,7 +29,7 @@ const Example: FC = () => {
         label: "doubling compute module",
       });
 
-      const pipeline = gpu.createComputePipeline({
+      const pipeline = await gpu.createComputePipelineAsync({
         label: "Main compute pipeline",
         layout: "auto",
         compute: {
@@ -96,7 +96,7 @@ const Example: FC = () => {
   // this gotta go
   const { execute, locked } = useAsyncAction(
     { double },
-    async ({ double }) => double(),
+    async ({ double }) => double().catch(console.error),
     []
   );
 

@@ -12,7 +12,7 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const canvas = useWebGPUCanvas();
@@ -21,7 +21,7 @@ const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
 
   useGPU(
-    ({ device }) => {
+    async ({ frame, gpu, device }) => {
       const shader = gpu.createShaderModule({
         label: "Storage buffers shader module",
         code: /*wgsl*/ `
@@ -67,7 +67,7 @@ const Example: FC = () => {
       `,
       });
 
-      const pipeline = gpu.createRenderPipeline({
+      const pipeline = await gpu.createRenderPipelineAsync({
         label: "Storage buffers render pipeline",
         layout: "auto",
         vertex: {

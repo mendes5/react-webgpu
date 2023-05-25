@@ -11,7 +11,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { type MipTexture, generateMips } from "~/utils/mips";
 import { type Vec3, mat4 } from "~/utils/math";
-import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const context = useWebGPUContext();
@@ -21,7 +21,7 @@ const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
 
   useGPU(
-    ({ device }) => {
+    async ({ frame, gpu, device }) => {
       const shader = gpu.createShaderModule({
         label: "CPU Mips shader",
         code: /* wgsl */ `
@@ -65,7 +65,7 @@ const Example: FC = () => {
       `,
       });
 
-      const pipeline = gpu.createRenderPipeline({
+      const pipeline = await gpu.createRenderPipelineAsync({
         label: "CPU Mips render pipeline",
         layout: "auto",
         vertex: {

@@ -10,7 +10,7 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useAsyncResource } from "~/utils/hooks";
-import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { useGPU } from "~/webgpu/use-gpu";
 import { getSourceSize } from "~/utils/mips";
 import type { H } from "~/utils/other";
 
@@ -49,7 +49,7 @@ const Example: FC = () => {
 
   useGPU(
     { video },
-    ({ device, video }) => {
+    async ({ frame, gpu, device, video }) => {
       if (video.type !== "success") return;
       const shader = gpu.createShaderModule({
         label: "Dogege shader",
@@ -90,7 +90,7 @@ const Example: FC = () => {
       }`,
       });
 
-      const pipeline = gpu.createRenderPipeline({
+      const pipeline = await gpu.createRenderPipelineAsync({
         label: "Dogege pipeline",
         layout: "auto",
         vertex: {

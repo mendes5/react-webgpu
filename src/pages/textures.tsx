@@ -9,7 +9,7 @@ import {
 } from "~/webgpu/canvas";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
-import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",
@@ -56,7 +56,7 @@ const Example: FC = () => {
   const context = useWebGPUContext();
 
   useGPU(
-    ({ device }) => {
+    async ({ frame, gpu, device }) => {
       const shader = gpu.createShaderModule({
         label: "Texture Shader",
         code: /* wgsl */ `
@@ -100,7 +100,7 @@ const Example: FC = () => {
       }`,
       });
 
-      const pipeline = gpu.createRenderPipeline({
+      const pipeline = await gpu.createRenderPipelineAsync({
         label: "Texture render pipeline",
         layout: "auto",
         vertex: {

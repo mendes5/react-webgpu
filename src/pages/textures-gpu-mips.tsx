@@ -12,9 +12,13 @@ import { ToOverlay } from "~/utils/overlay";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useAsyncResource } from "~/utils/hooks";
 import { getSourceSize, loadImageBitmap, numMipLevels } from "~/utils/mips";
-import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { type GPU_API, useGPU } from "~/webgpu/use-gpu";
 
-const renderMips = (device: GPUDevice, texture: GPUTexture) => {
+const renderMips = async (
+  device: GPUDevice,
+  texture: GPUTexture,
+  gpu: GPU_API
+) => {
   const shader = gpu.createShaderModule({
     label: "GPU Mips generator shader",
     code: /* wgsl */ `
@@ -58,7 +62,7 @@ const renderMips = (device: GPUDevice, texture: GPUTexture) => {
     minFilter: "linear",
   });
 
-  const pipeline = gpu.createRenderPipeline({
+  const pipeline = await gpu.createRenderPipelineAsync({
     label: "GPU mips generator render pipeline",
     layout: "auto",
     vertex: {
@@ -150,7 +154,7 @@ const Example: FC = () => {
 
   useGPU(
     { texture1, texture2, texture3 },
-    ({ device, texture1, texture2, texture3 }) => {
+    async ({ frame, gpu, device, texture1, texture2, texture3 }) => {
       if (
         texture1.type !== "success" ||
         texture2.type !== "success" ||
@@ -201,7 +205,7 @@ const Example: FC = () => {
         `,
       });
 
-      const pipeline = gpu.createRenderPipeline({
+      const pipeline = await gpu.createRenderPipelineAsync({
         label: "GPU Mips example render pipeline",
         layout: "auto",
         vertex: {
@@ -231,7 +235,7 @@ const Example: FC = () => {
         { texture: texture1R },
         { width: size1[0], height: size1[1] }
       );
-      renderMips(device, texture1R);
+      await renderMips(device, texture1R, gpu);
 
       const size2 = getSourceSize(texture2.value);
       const texture2R = gpu.createTexture({
@@ -249,7 +253,7 @@ const Example: FC = () => {
         { texture: texture2R },
         { width: size2[0], height: size2[1] }
       );
-      renderMips(device, texture2R);
+      await renderMips(device, texture2R, gpu);
 
       const size3 = getSourceSize(texture3.value);
       const texture3R = gpu.createTexture({
@@ -267,7 +271,7 @@ const Example: FC = () => {
         { texture: texture3R },
         { width: size3[0], height: size3[1] }
       );
-      renderMips(device, texture3R);
+      await renderMips(device, texture3R, gpu);
 
       const objectInfos = [] as {
         bindGroups: GPUBindGroup[];

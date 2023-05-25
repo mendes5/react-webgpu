@@ -10,7 +10,7 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { useAsyncResource } from "~/utils/hooks";
-import { frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { useGPU } from "~/webgpu/use-gpu";
 import { getSourceSize, loadImageBitmap } from "~/utils/mips";
 import { type H } from "~/utils/other";
 
@@ -42,7 +42,7 @@ const Example: FC = () => {
   const context = useWebGPUContext();
 
   useGPU(
-    ({ device }) => {
+    async ({ device, frame, gpu }) => {
       const shader = gpu.createShaderModule({
         label: "External texture shader module",
         code: /* wgsl */ `
@@ -87,7 +87,7 @@ const Example: FC = () => {
         `,
       });
 
-      const pipeline = gpu.createRenderPipeline({
+      const pipeline = await gpu.createRenderPipelineAsync({
         label: "External texture render pipeline",
         layout: "auto",
         vertex: {

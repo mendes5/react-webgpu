@@ -11,7 +11,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { createCircleVertices } from "~/utils/geometry";
-import { action, frame, gpu, useGPU } from "~/webgpu/use-gpu";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const canvas = useWebGPUCanvas();
@@ -44,7 +44,7 @@ const Example: FC = () => {
   const objectCountRef = useRef(kNumObjects);
 
   const randomize = useGPU(
-    ({ device }) => {
+    async ({ action, frame, gpu, device }) => {
       const shader = gpu.createShaderModule({
         label: "Vertex buffer example shader",
         code: /* wgsl */ `
@@ -102,7 +102,7 @@ const Example: FC = () => {
         },
       ];
 
-      const pipeline = gpu.createRenderPipeline({
+      const pipeline = await gpu.createRenderPipelineAsync({
         label: "Vertex buffer example render pipeline",
         layout: "auto",
         vertex: {
