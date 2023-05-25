@@ -43,6 +43,12 @@ export type GPU_API = {
   createComputePipeline: (
     desc: GPUComputePipelineDescriptor
   ) => H<GPUComputePipeline>;
+  createRenderPipelineAsync: (
+    desc: GPURenderPipelineDescriptor
+  ) => Promise<H<GPURenderPipeline>>;
+  createComputePipelineAsync: (
+    desc: GPUComputePipelineDescriptor
+  ) => Promise<H<GPUComputePipeline>>;
   createSampler: (desc: GPUSamplerDescriptor) => H<GPUSampler>;
 };
 
@@ -73,39 +79,6 @@ const globalResourceHash = (desc: GPUObjectDescriptorBase) =>
     },
   });
 
-const stubGPUProxy: GPU_API = {
-  createBuffer() {
-    throw new Error(
-      "Cannot call gpu.createBuffer() outside the rendering cycle of useGPU."
-    );
-  },
-  createComputePipeline() {
-    throw new Error(
-      "Cannot call gpu.createComputePipeline() outside the rendering cycle of useGPU."
-    );
-  },
-  createRenderPipeline() {
-    throw new Error(
-      "Cannot call gpu.createRenderPipeline() outside the rendering cycle of useGPU."
-    );
-  },
-  createSampler() {
-    throw new Error(
-      "Cannot call gpu.createSampler() outside the rendering cycle of useGPU."
-    );
-  },
-  createShaderModule() {
-    throw new Error(
-      "Cannot call gpu.createShaderModule() outside the rendering cycle of useGPU."
-    );
-  },
-  createTexture() {
-    throw new Error(
-      "Cannot call gpu.createTexture() outside the rendering cycle of useGPU."
-    );
-  },
-};
-
 export type FrameBag = {
   time: number;
   encoder: GPUCommandEncoder;
@@ -131,61 +104,6 @@ export const GPUActionContext = createContext<Set<(bag: ActionBag) => unknown>>(
   new Set()
 );
 
-const GPUProxy = Object.assign({}, stubGPUProxy);
-
-const stubRendererProxy: FrameAPI = {
-  useFrame: () => {
-    throw new Error(
-      "Tried to create a frame callback outside the rendering cycle of useGPU."
-    );
-  },
-  useAction: () => {
-    throw new Error(
-      "Tried to create a action outside the rendering cycle of useGPU."
-    );
-  },
-};
-
-type FrameAPI = {
-  useFrame: (
-    key: string,
-    callback: (bag: FrameBag) => void,
-    deps?: unknown[]
-  ) => void;
-  useAction: (
-    callback: (bag: ActionBag, arg?: unknown) => Promise<unknown>
-  ) => (arg?: unknown) => Promise<unknown>;
-};
-
-const rendererProxy = Object.assign({}, stubRendererProxy);
-
-export function action<T>(
-  callback: (bag: ActionBag) => Promise<T>
-): () => Promise<T> {
-  // Shhhhhh
-  // eslint-disable-next-line
-  // @ts-ignore
-  return rendererProxy.useAction(callback);
-}
-
-export const frame: Record<
-  string,
-  (callback: (bag: FrameBag) => void, deps?: unknown[]) => void
-> = new Proxy(
-  {},
-  {
-    get(_, p) {
-      return (callback: (bag: FrameBag) => void, deps?: unknown[]) => {
-        if (typeof p === "symbol") {
-          throw new Error("Nah");
-        }
-
-        rendererProxy.useFrame(p, callback, deps);
-      };
-    },
-  }
-);
-
 const isSameDependencies = (
   prev: unknown[] | undefined,
   next: unknown[] | undefined
@@ -208,34 +126,33 @@ const isSameDependencies = (
   return valid;
 };
 
-export const gpu: GPU_API = {
-  createBuffer: (desc) => GPUProxy.createBuffer(desc),
-  createComputePipeline: (desc) => GPUProxy.createComputePipeline(desc),
-  createRenderPipeline: (desc) => GPUProxy.createRenderPipeline(desc),
-  createSampler: (desc) => GPUProxy.createSampler(desc),
-  createShaderModule: (desc) => GPUProxy.createShaderModule(desc),
-  createTexture: (desc) => GPUProxy.createTexture(desc),
+type GPUFields = {
+  device: GPUDevice;
+  frame: Record<
+    string,
+    (callback: (bag: FrameBag) => void, deps?: unknown[]) => void
+  >;
+  action<T>(callback: (bag: ActionBag) => Promise<T>): () => Promise<T>;
+  gpu: GPU_API;
 };
 
 export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
   bag: T,
-  callback: (bag: NoUndefinedField<T> & { device: GPUDevice }) => R,
+  callback: (bag: NoUndefinedField<T> & GPUFields) => R,
   deps: unknown[]
-): R extends Record<string, unknown> ? Partial<R> : R | undefined;
+): Awaited<R extends Record<string, unknown> ? Partial<R> : R | undefined>;
 
 export function useGPU<R>(
-  callback: (bag: { device: GPUDevice }) => R,
+  callback: (bag: GPUFields) => R,
   deps: unknown[]
-): R extends Record<string, unknown> ? Partial<R> : R | undefined;
+): Awaited<R extends Record<string, unknown> ? Partial<R> : R | undefined>;
 
 export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
-  bagOrCallback: T | ((bag: { device: GPUDevice }) => R),
-  callbackOrDeps:
-    | unknown[]
-    | ((bag: NoUndefinedField<T> & { device: GPUDevice }) => R),
+  bagOrCallback: T | ((bag: GPUFields) => R),
+  callbackOrDeps: unknown[] | ((bag: NoUndefinedField<T> & GPUFields) => R),
   maybeDeps?: unknown[]
-): R extends Record<string, unknown> ? Partial<R> : R | undefined {
-  let callback: (bag: NoUndefinedField<T> & { device: GPUDevice }) => R;
+): Awaited<R extends Record<string, unknown> ? Partial<R> : R | undefined> {
+  let callback: (bag: NoUndefinedField<T> & GPUFields) => R;
   let bag: T;
   let deps;
 
@@ -327,204 +244,260 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
       const unusedBuffers = new Set([...currentBuffers.keys()]);
       const unusedTextures = new Set([...currentTextures.keys()]);
 
-      GPUProxy.createBuffer = (desc: GPUBufferDescriptor) => {
-        const key = localResourceHash(desc, device);
-        const existing = currentBuffers.get(key);
+      const GPUProxy = {
+        createBuffer: (desc: GPUBufferDescriptor) => {
+          const key = localResourceHash(desc, device);
+          const existing = currentBuffers.get(key);
 
-        if (existing) {
-          unusedBuffers.delete(key);
-          return existing;
-        }
+          if (existing) {
+            unusedBuffers.delete(key);
+            return existing;
+          }
 
-        const resource = hashed(device.createBuffer(desc));
-        currentBuffers.set(key, resource);
+          const resource = hashed(device.createBuffer(desc));
+          currentBuffers.set(key, resource);
 
-        log(
-          `Created buffer ${desc.label ?? "<unnamed>"} (${shortId(
-            resource.instanceId
-          )}) for instance ${id}`
-        );
-        return resource;
+          log(
+            `Created buffer ${desc.label ?? "<unnamed>"} (${shortId(
+              resource.instanceId
+            )}) for instance ${id}`
+          );
+          return resource;
+        },
+        createTexture: (desc: GPUTextureDescriptor) => {
+          const key = localResourceHash(desc, device);
+          const existing = currentTextures.get(key);
+
+          if (existing) {
+            unusedTextures.delete(key);
+            return existing;
+          }
+
+          const resource = hashed(device.createTexture(desc));
+          currentTextures.set(key, resource);
+
+          log(
+            `Created texture ${desc.label ?? "<unnamed>"} ${shortId(
+              resource.instanceId
+            )} for instance ${id}`
+          );
+          return resource;
+        },
+        createShaderModule: (desc: GPUShaderModuleDescriptor) => {
+          let cache = SHADER_CACHE.get(device);
+          if (!cache) {
+            const newCache = new Map();
+            cache = newCache;
+            SHADER_CACHE.set(device, cache);
+            device.lost
+              .then(() => {
+                SHADER_CACHE.delete(device);
+                const size = newCache.size;
+                newCache.clear();
+                log(
+                  `Cleared ${size} items from shader cache of device ${device.instanceId}`
+                );
+              })
+              .catch(console.error);
+          }
+
+          const key = globalResourceHash(desc);
+          const fromCache = cache.get(key);
+
+          if (fromCache) return fromCache;
+
+          const resource = hashed(device.createShaderModule(desc));
+          cache.set(key, resource);
+
+          log(
+            `Created shader ${desc.label ?? "<unnamed>"} ${shortId(
+              resource.instanceId
+            )} for device ${shortId(device.instanceId)}`
+          );
+          return resource;
+        },
+        createRenderPipeline: (desc: GPURenderPipelineDescriptor) => {
+          let cache = RENDER_PIPELINE_CACHE.get(device);
+          if (!cache) {
+            const newCache = new Map();
+            cache = newCache;
+            RENDER_PIPELINE_CACHE.set(device, cache);
+            device.lost
+              .then(() => {
+                RENDER_PIPELINE_CACHE.delete(device);
+                const size = newCache.size;
+                newCache.clear();
+                log(
+                  `Cleared ${size} items from render pipeline cache of device ${device.instanceId}`
+                );
+              })
+              .catch(console.error);
+          }
+
+          const key = globalResourceHash(desc);
+          const fromCache = cache.get(key);
+
+          if (fromCache) return fromCache;
+
+          const resource = hashed(device.createRenderPipeline(desc));
+          log(
+            `Created render pipeline ${desc.label ?? "<unnamed>"} ${shortId(
+              resource.instanceId
+            )} for device ${shortId(device.instanceId)}`
+          );
+
+          cache.set(key, resource);
+
+          return resource;
+        },
+        createComputePipeline: (desc: GPUComputePipelineDescriptor) => {
+          let cache = COMPUTE_PIPELINE_CACHE.get(device);
+          if (!cache) {
+            const newCache = new Map();
+            cache = newCache;
+            COMPUTE_PIPELINE_CACHE.set(device, cache);
+            device.lost
+              .then(() => {
+                COMPUTE_PIPELINE_CACHE.delete(device);
+                const size = newCache.size;
+                newCache.clear();
+                log(
+                  `Cleared ${size} items from compute pipeline cache of device ${device.instanceId}`
+                );
+              })
+              .catch(console.error);
+          }
+
+          const key = globalResourceHash(desc);
+          const fromCache = cache.get(key);
+
+          if (fromCache) return fromCache;
+
+          const resource = hashed(device.createComputePipeline(desc));
+          cache.set(key, resource);
+
+          log(
+            `Created compute pipeline ${desc.label ?? "<unnamed>"} ${shortId(
+              resource.instanceId
+            )} for device ${shortId(device.instanceId)}`
+          );
+          return resource;
+        },
+        createRenderPipelineAsync: async (
+          desc: GPURenderPipelineDescriptor
+        ) => {
+          let cache = RENDER_PIPELINE_CACHE.get(device);
+          if (!cache) {
+            const newCache = new Map();
+            cache = newCache;
+            RENDER_PIPELINE_CACHE.set(device, cache);
+            device.lost
+              .then(() => {
+                RENDER_PIPELINE_CACHE.delete(device);
+                const size = newCache.size;
+                newCache.clear();
+                log(
+                  `Cleared ${size} items from render pipeline cache of device ${device.instanceId}`
+                );
+              })
+              .catch(console.error);
+          }
+
+          const key = globalResourceHash(desc);
+          const fromCache = cache.get(key);
+
+          if (fromCache) return fromCache;
+
+          const resource = hashed(await device.createRenderPipelineAsync(desc));
+          log(
+            `Created render pipeline ${desc.label ?? "<unnamed>"} ${shortId(
+              resource.instanceId
+            )} (key: ${key}) for device ${shortId(device.instanceId)}`
+          );
+
+          cache.set(key, resource);
+
+          return resource;
+        },
+        createComputePipelineAsync: async (
+          desc: GPUComputePipelineDescriptor
+        ) => {
+          let cache = COMPUTE_PIPELINE_CACHE.get(device);
+          if (!cache) {
+            const newCache = new Map();
+            cache = newCache;
+            COMPUTE_PIPELINE_CACHE.set(device, cache);
+            device.lost
+              .then(() => {
+                COMPUTE_PIPELINE_CACHE.delete(device);
+                const size = newCache.size;
+                newCache.clear();
+                log(
+                  `Cleared ${size} items from compute pipeline cache of device ${device.instanceId}`
+                );
+              })
+              .catch(console.error);
+          }
+
+          const key = globalResourceHash(desc);
+          const fromCache = cache.get(key);
+
+          if (fromCache) return fromCache;
+
+          const resource = hashed(
+            await device.createComputePipelineAsync(desc)
+          );
+          cache.set(key, resource);
+
+          log(
+            `Created compute pipeline ${desc.label ?? "<unnamed>"} ${shortId(
+              resource.instanceId
+            )} for device ${shortId(device.instanceId)}`
+          );
+          return resource;
+        },
+        createSampler: (desc: GPUSamplerDescriptor) => {
+          let cache = SAMPLER_CACHE.get(device);
+          if (!cache) {
+            const newCache = new Map();
+            cache = newCache;
+            SAMPLER_CACHE.set(device, cache);
+            device.lost
+              .then(() => {
+                SAMPLER_CACHE.delete(device);
+                const size = newCache.size;
+                newCache.clear();
+                log(
+                  `Cleared ${size} items from sampler cache of device ${device.instanceId}`
+                );
+              })
+              .catch(console.error);
+          }
+
+          const key = globalResourceHash(desc);
+          const fromCache = cache.get(key);
+
+          if (fromCache) return fromCache;
+
+          const resource = hashed(device.createSampler(desc));
+          cache.set(key, resource);
+
+          log(
+            `Created sampler ${desc.label ?? "<unnamed>"} ${shortId(
+              resource.instanceId
+            )} for device ${shortId(device.instanceId)}`
+          );
+          return resource;
+        },
       };
-      GPUProxy.createTexture = (desc: GPUTextureDescriptor) => {
-        const key = localResourceHash(desc, device);
-        const existing = currentTextures.get(key);
 
-        if (existing) {
-          unusedTextures.delete(key);
-          return existing;
-        }
-
-        const resource = hashed(device.createTexture(desc));
-        currentTextures.set(key, resource);
-
-        log(
-          `Created texture ${desc.label ?? "<unnamed>"} ${shortId(
-            resource.instanceId
-          )} for instance ${id}`
-        );
-        return resource;
-      };
-      GPUProxy.createShaderModule = (desc: GPUShaderModuleDescriptor) => {
-        let cache = SHADER_CACHE.get(device);
-        if (!cache) {
-          const newCache = new Map();
-          cache = newCache;
-          SHADER_CACHE.set(device, cache);
-          device.lost
-            .then(() => {
-              SHADER_CACHE.delete(device);
-              const size = newCache.size;
-              newCache.clear();
-              log(
-                `Cleared ${size} items from shader cache of device ${device.instanceId}`
-              );
-            })
-            .catch(console.error);
-        }
-
-        const key = globalResourceHash(desc);
-        const fromCache = cache.get(key);
-
-        if (fromCache) return fromCache;
-
-        const resource = hashed(device.createShaderModule(desc));
-        cache.set(key, resource);
-
-        log(
-          `Created shader ${desc.label ?? "<unnamed>"} ${shortId(
-            resource.instanceId
-          )} for device ${shortId(device.instanceId)}`
-        );
-        return resource;
-      };
-      GPUProxy.createRenderPipeline = (desc: GPURenderPipelineDescriptor) => {
-        let cache = RENDER_PIPELINE_CACHE.get(device);
-        if (!cache) {
-          const newCache = new Map();
-          cache = newCache;
-          RENDER_PIPELINE_CACHE.set(device, cache);
-          device.lost
-            .then(() => {
-              RENDER_PIPELINE_CACHE.delete(device);
-              const size = newCache.size;
-              newCache.clear();
-              log(
-                `Cleared ${size} items from render pipeline cache of device ${device.instanceId}`
-              );
-            })
-            .catch(console.error);
-        }
-
-        const key = globalResourceHash(desc);
-        const fromCache = cache.get(key);
-
-        if (fromCache) return fromCache;
-
-        const resource = hashed(device.createRenderPipeline(desc));
-        log(
-          `Created render pipeline ${desc.label ?? "<unnamed>"} ${shortId(
-            resource.instanceId
-          )} for device ${shortId(device.instanceId)}`
-        );
-
-        cache.set(key, resource);
-
-        return resource;
-      };
-      GPUProxy.createComputePipeline = (desc: GPUComputePipelineDescriptor) => {
-        let cache = COMPUTE_PIPELINE_CACHE.get(device);
-        if (!cache) {
-          const newCache = new Map();
-          cache = newCache;
-          COMPUTE_PIPELINE_CACHE.set(device, cache);
-          device.lost
-            .then(() => {
-              COMPUTE_PIPELINE_CACHE.delete(device);
-              const size = newCache.size;
-              newCache.clear();
-              log(
-                `Cleared ${size} items from compute pipeline cache of device ${device.instanceId}`
-              );
-            })
-            .catch(console.error);
-        }
-
-        const key = globalResourceHash(desc);
-        const fromCache = cache.get(key);
-
-        if (fromCache) return fromCache;
-
-        const resource = hashed(device.createComputePipeline(desc));
-        cache.set(key, resource);
-
-        log(
-          `Created compute pipeline ${desc.label ?? "<unnamed>"} ${shortId(
-            resource.instanceId
-          )} for device ${shortId(device.instanceId)}`
-        );
-        return resource;
-      };
-      GPUProxy.createSampler = (desc: GPUSamplerDescriptor) => {
-        let cache = SAMPLER_CACHE.get(device);
-        if (!cache) {
-          const newCache = new Map();
-          cache = newCache;
-          SAMPLER_CACHE.set(device, cache);
-          device.lost
-            .then(() => {
-              SAMPLER_CACHE.delete(device);
-              const size = newCache.size;
-              newCache.clear();
-              log(
-                `Cleared ${size} items from sampler cache of device ${device.instanceId}`
-              );
-            })
-            .catch(console.error);
-        }
-
-        const key = globalResourceHash(desc);
-        const fromCache = cache.get(key);
-
-        if (fromCache) return fromCache;
-
-        const resource = hashed(device.createSampler(desc));
-        cache.set(key, resource);
-
-        log(
-          `Created sampler ${desc.label ?? "<unnamed>"} ${shortId(
-            resource.instanceId
-          )} for device ${shortId(device.instanceId)}`
-        );
-        return resource;
-      };
-
-      const unusedFrames = new Set([...currentFrames.keys()]);
-
-      rendererProxy.useFrame = (key, callback, deps) => {
-        const ownKey = `${key}@${id}`;
-        unusedFrames.delete(ownKey);
-
-        const hasDeps = Array.isArray(deps);
-
-        if (hasDeps) {
-          const isFirstRender = !depsRef.current!.has(ownKey);
-          const lastDeps = depsRef.current!.get(ownKey);
-
-          const areSame = isSameDependencies(deps, lastDeps);
-          const enabled = !areSame || isFirstRender;
-
-          rendererContext.set(ownKey, { callback, enabled, kind: "once" });
-        } else {
-          rendererContext.set(ownKey, {
-            callback,
-            enabled: true,
-            kind: "loop",
-          });
-        }
-      };
-      rendererProxy.useAction = (callback) => {
-        return (arg) => {
+      function action<T>(
+        callback: (bag: ActionBag) => Promise<T>
+      ): () => Promise<T> {
+        // Shhhhhh
+        // eslint-disable-next-line
+        // @ts-ignore
+        return () => {
           const promise = {
             resolve: (_: unknown): void => undefined,
             reject: (_: unknown): void => undefined,
@@ -536,56 +509,110 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
           });
 
           actionContext.add(async (bag) =>
-            callback(bag, arg).then(promise.resolve).catch(promise.reject)
+            callback(bag).then(promise.resolve).catch(promise.reject)
           );
 
           return token;
         };
+      }
+
+      const frame: Record<
+        string,
+        (callback: (bag: FrameBag) => void, deps?: unknown[]) => void
+      > = new Proxy(
+        {},
+        {
+          get(_, p) {
+            return (callback: (bag: FrameBag) => void, deps?: unknown[]) => {
+              if (typeof p === "symbol") {
+                throw new Error("Nah");
+              }
+
+              const ownKey = `${p}@${id}`;
+              unusedFrames.delete(ownKey);
+
+              const hasDeps = Array.isArray(deps);
+
+              if (hasDeps) {
+                const isFirstRender = !depsRef.current!.has(ownKey);
+                const lastDeps = depsRef.current!.get(ownKey);
+
+                const areSame = isSameDependencies(deps, lastDeps);
+                const enabled = !areSame || isFirstRender;
+
+                rendererContext.set(ownKey, {
+                  callback,
+                  enabled,
+                  kind: "once",
+                });
+              } else {
+                rendererContext.set(ownKey, {
+                  callback,
+                  enabled: true,
+                  kind: "loop",
+                });
+              }
+            };
+          },
+        }
+      );
+
+      const unusedFrames = new Set([...currentFrames.keys()]);
+
+      const out = callbackRef.current({
+        ...bag,
+        device,
+        gpu: GPUProxy,
+        frame,
+        action,
+      });
+
+      const finish = (out: R) => {
+        unusedFrames.forEach((key) => {
+          rendererContext.delete(key);
+        });
+
+        unusedBuffers.forEach((resource) => {
+          const fromCache = currentBuffers.get(resource);
+          if (!fromCache) {
+            console.warn(
+              `Buffer keyed ${resource} on instance ${id} was deleted outside the render cycle, this should not happen.`
+            );
+            return;
+          }
+          currentBuffers.delete(resource);
+          log(
+            `Destroyed buffer ${shortId(
+              fromCache.instanceId
+            )} on instance ${id}, unused.`
+          );
+          fromCache.destroy();
+        });
+        unusedTextures.forEach((resource) => {
+          const fromCache = currentTextures.get(resource);
+          if (!fromCache) {
+            console.warn(
+              `Texture keyed ${resource} on instance ${id} was deleted outside the render cycle, this should not happen.`
+            );
+            return;
+          }
+          currentTextures.delete(resource);
+          log(
+            `Destroyed texture ${shortId(
+              fromCache.instanceId
+            )} on instance ${id}, unused.`
+          );
+          fromCache.destroy();
+        });
+
+        setResult(() => out ?? undefined);
       };
 
-      const out = callbackRef.current({ ...bag, device });
-
-      Object.assign(GPUProxy, stubGPUProxy);
-      Object.assign(rendererProxy, stubRendererProxy);
-
-      unusedFrames.forEach((key) => {
-        rendererContext.delete(key);
-      });
-
-      unusedBuffers.forEach((resource) => {
-        const fromCache = currentBuffers.get(resource);
-        if (!fromCache) {
-          console.warn(
-            `Buffer keyed ${resource} on instance ${id} was deleted outside the render cycle, this should not happen.`
-          );
-          return;
-        }
-        currentBuffers.delete(resource);
-        log(
-          `Destroyed buffer ${shortId(
-            fromCache.instanceId
-          )} on instance ${id}, unused.`
-        );
-        fromCache.destroy();
-      });
-      unusedTextures.forEach((resource) => {
-        const fromCache = currentTextures.get(resource);
-        if (!fromCache) {
-          console.warn(
-            `Texture keyed ${resource} on instance ${id} was deleted outside the render cycle, this should not happen.`
-          );
-          return;
-        }
-        currentTextures.delete(resource);
-        log(
-          `Destroyed texture ${shortId(
-            fromCache.instanceId
-          )} on instance ${id}, unused.`
-        );
-        fromCache.destroy();
-      });
-
-      setResult(() => out ?? undefined);
+      if (out instanceof Promise) {
+        out.then(finish).catch(console.error);
+      } else {
+        finish(out);
+      }
     },
     () => {
       setResult(undefined);

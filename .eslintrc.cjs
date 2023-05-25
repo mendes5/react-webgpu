@@ -10,6 +10,11 @@ const config = {
       ],
       files: ["*.ts", "*.tsx"],
       rules: {
+        // Disabled since it is bugging in some cases
+        "@typescript-eslint/no-floating-promises": "off",
+        // Disabled since in some cases the type
+        // requires that the function is async
+        // but it could have no away in some implementations
         "@typescript-eslint/require-await": "off",
       },
       parserOptions: {
