@@ -1,7 +1,7 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { type FC, useRef } from "react";
+import { type FC } from "react";
 import {
   usePresentationFormat,
   useWebGPUCanvas,
@@ -11,11 +11,11 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { type MipTexture, generateMips } from "~/utils/mips";
 import { type Vec3, mat4 } from "~/utils/math";
-import { useGPU } from "~/webgpu/use-gpu";
+import { useGPU, useRefTrap } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const context = useWebGPUContext();
-  const toggleRef = useRef(true);
+  const toggleRef = useRefTrap(true);
   const canvas = useWebGPUCanvas();
 
   const presentationFormat = usePresentationFormat();
@@ -219,8 +219,7 @@ const Example: FC = () => {
         );
 
         pass.end();
-        // TODO:: ref mutation should re-render this
-      });
+      }, []);
     },
     [presentationFormat]
   );

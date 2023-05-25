@@ -1,7 +1,7 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { type FC, useRef } from "react";
+import { useRef, type FC } from "react";
 import {
   usePresentationFormat,
   useWebGPUCanvas,
@@ -10,7 +10,7 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
-import { useGPU } from "~/webgpu/use-gpu";
+import { useGPU, useRefTrap } from "~/webgpu/use-gpu";
 
 export function createCircleVerticesIndexed({
   radius = 1,
@@ -90,10 +90,10 @@ const Example: FC = () => {
 
   const canvas = useWebGPUCanvas();
 
-  const objectCountRef = useRef(10);
+  const objectCountRef = useRefTrap(10);
 
   const randomize = useGPU(
-    async ({ frame, gpu, device }) => {
+    async ({ frame, gpu, device, action }) => {
       const shader = gpu.createShaderModule({
         label: "Index example shader",
         code: /* wgsl */ `
@@ -253,24 +253,7 @@ const Example: FC = () => {
         ],
       });
 
-      const randomize = () => {
-        for (const i of range(kNumObjects)) {
-          const staticOffset = i * (staticUnitSize / 4);
-
-          staticStorageValues.set(
-            [rand(), rand(), rand(), 1],
-            staticOffset + kColorOffset
-          );
-          staticStorageValues.set(
-            [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-            staticOffset + kOffsetOffset
-          );
-          device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
-        }
-      };
-
-      frame.main!(({ encoder }) => {
-        console.log("render");
+      const main = frame.main!(({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -297,9 +280,27 @@ const Example: FC = () => {
         device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
 
         pass.setBindGroup(0, bindGroup);
-        pass.drawIndexed(numVertices, objectCountRef.current ?? 10);
+        pass.drawIndexed(numVertices, objectCountRef.current);
         pass.end();
       }, []);
+
+      const randomize = action(async ({ invalidate }) => {
+        invalidate(main);
+
+        for (const i of range(kNumObjects)) {
+          const staticOffset = i * (staticUnitSize / 4);
+
+          staticStorageValues.set(
+            [rand(), rand(), rand(), 1],
+            staticOffset + kColorOffset
+          );
+          staticStorageValues.set(
+            [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+            staticOffset + kOffsetOffset
+          );
+          device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
+        }
+      });
 
       return randomize;
     },
@@ -307,6 +308,7 @@ const Example: FC = () => {
   );
 
   const spanRef = useRef<HTMLSpanElement>(null);
+
   return (
     <ToOverlay>
       <button
@@ -320,7 +322,7 @@ const Example: FC = () => {
         <input
           type="range"
           min={0}
-          defaultValue={100}
+          defaultValue={objectCountRef.current}
           max={100}
           onInput={(event) => {
             objectCountRef.current = parseInt(event.currentTarget.value, 10);

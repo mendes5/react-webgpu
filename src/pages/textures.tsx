@@ -9,7 +9,7 @@ import {
 } from "~/webgpu/canvas";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
-import { useGPU } from "~/webgpu/use-gpu";
+import { useGPU, useRefTrap } from "~/webgpu/use-gpu";
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",
@@ -27,7 +27,7 @@ const Example: FC = () => {
   const [modeV, setModeV] = useState<string>(AddressMode.repeat);
   const [magFilter, setMagFilter] = useState<string>(FilterMode.nearest);
   const [minFilter, setMingFilter] = useState<string>(FilterMode.nearest);
-  const scaleRef = useRef(1);
+  const scaleRef = useRefTrap(1);
 
   const { textureData, kTextureWidth, kTextureHeight } = useMemo(() => {
     const kTextureWidth = 5;
@@ -182,8 +182,8 @@ const Example: FC = () => {
 
         // compute a scale that will draw our 0 to 1 clip space quad
         // 2x2 pixels in the canvas.
-        const scaleX = (4 / canvas.width) * scaleRef.current;
-        const scaleY = (4 / canvas.height) * scaleRef.current;
+        const scaleX = (4 / canvas.width) * scaleRef.current!;
+        const scaleY = (4 / canvas.height) * scaleRef.current!;
 
         uniformValues.set([scaleX, scaleY], kScaleOffset); // set the scale
         uniformValues.set([Math.sin(time * 0.25) * 0.8, -0.8], kOffsetOffset); // set the offset

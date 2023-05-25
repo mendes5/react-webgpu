@@ -9,7 +9,7 @@ import {
 import { useEffect, useRef } from "react";
 import { useCounter, useIsMounted } from "usehooks-ts";
 import { log } from "~/webgpu/logger";
-import { NOOP, type H } from "./other";
+import { type H } from "./other";
 
 const GLOBAL_VERSION = {
   v: 0,

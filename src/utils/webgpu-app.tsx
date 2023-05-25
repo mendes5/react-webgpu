@@ -2,7 +2,6 @@ import { type FC, type PropsWithChildren } from "react";
 import { WebGPUCanvas } from "~/webgpu/canvas";
 import { Inspector } from "~/webgpu/debug";
 import { WebGPUDevice } from "~/webgpu/gpu-device";
-import { RenderController } from "~/webgpu/per-frame";
 import { Overlay, ToOverlayEnd } from "./overlay";
 import { Menu } from "~/components/menu";
 
@@ -24,26 +23,24 @@ export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
 }) => {
   return (
     <Inspector name="root">
-      <RenderController enabled>
-        <WebGPUDevice
-          loading={<h1>Loading</h1>}
-          fallback={<h1>Failed to create GPUDevice</h1>}
-        >
-          {canvas ? (
-            <WebGPUCanvas
-              downscale={downscale}
-              fullscreen={fullscreen}
-              fallback={<h1>Failed to create Canvas</h1>}
-              width={width}
-              height={height}
-            >
-              {children}
-            </WebGPUCanvas>
-          ) : (
-            children
-          )}
-        </WebGPUDevice>
-      </RenderController>
+      <WebGPUDevice
+        loading={<h1>Loading</h1>}
+        fallback={<h1>Failed to create GPUDevice</h1>}
+      >
+        {canvas ? (
+          <WebGPUCanvas
+            downscale={downscale}
+            fullscreen={fullscreen}
+            fallback={<h1>Failed to create Canvas</h1>}
+            width={width}
+            height={height}
+          >
+            {children}
+          </WebGPUCanvas>
+        ) : (
+          children
+        )}
+      </WebGPUDevice>
       <Overlay />
       <ToOverlayEnd>
         <Menu />

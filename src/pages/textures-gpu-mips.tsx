@@ -1,7 +1,7 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { type FC, useRef } from "react";
+import { type FC } from "react";
 import {
   usePresentationFormat,
   useWebGPUCanvas,
@@ -12,7 +12,7 @@ import { ToOverlay } from "~/utils/overlay";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useAsyncResource } from "~/utils/hooks";
 import { getSourceSize, loadImageBitmap, numMipLevels } from "~/utils/mips";
-import { type GPU_API, useGPU } from "~/webgpu/use-gpu";
+import { type GPU_API, useGPU, useRefTrap } from "~/webgpu/use-gpu";
 
 const renderMips = async (
   device: GPUDevice,
@@ -150,7 +150,7 @@ const Example: FC = () => {
     []
   );
 
-  const toggleRef = useRef(0);
+  const toggleRef = useRefTrap(0);
 
   useGPU(
     { texture1, texture2, texture3 },
@@ -357,7 +357,7 @@ const Example: FC = () => {
 
         objectInfos.forEach(
           ({ bindGroups, matrix, uniformBuffer, uniformValues }, i) => {
-            const bindGroup = bindGroups[toggleRef.current]!;
+            const bindGroup = bindGroups[toggleRef.current!]!;
 
             const xSpacing = 1.2;
             const ySpacing = 0.7;
@@ -383,8 +383,7 @@ const Example: FC = () => {
           }
         );
         pass.end();
-        // TODO: ref mutation should rerender
-      });
+      }, []);
     },
     [presentationFormat]
   );
@@ -394,7 +393,7 @@ const Example: FC = () => {
       <button
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
         onClick={() => {
-          toggleRef.current = (toggleRef.current + 1) % 3;
+          toggleRef.current = (toggleRef.current! + 1) % 3;
         }}
       >
         Change Texture

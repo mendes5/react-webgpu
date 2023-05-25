@@ -10,7 +10,7 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
-import { useGPU } from "~/webgpu/use-gpu";
+import { useGPU, useRefTrap } from "~/webgpu/use-gpu";
 
 export function createCircleVerticesSeparate({
   radius = 1,
@@ -92,7 +92,7 @@ const Example: FC = () => {
 
   const presentationFormat = usePresentationFormat();
 
-  const objectCountRef = useRef(kNumObjects);
+  const objectCountRef = useRefTrap(kNumObjects);
 
   const randomize = useGPU(
     async ({ action, frame, gpu, device }) => {
@@ -238,23 +238,7 @@ const Example: FC = () => {
         ],
       });
 
-      const randomize = action(async () => {
-        for (const i of range(kNumObjects)) {
-          const staticOffset = i * (staticUnitSize / 4);
-
-          staticStorageValues.set(
-            [rand(), rand(), rand(), 1],
-            staticOffset + kColorOffset
-          );
-          staticStorageValues.set(
-            [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-            staticOffset + kOffsetOffset
-          );
-          device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
-        }
-      });
-
-      frame.main!(({ encoder }) => {
+      const main = frame.main!(({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -283,7 +267,26 @@ const Example: FC = () => {
         pass.setBindGroup(0, bindGroup);
         pass.draw(numVertices, objectCountRef.current);
         pass.end();
+      }, []);
+
+      const randomize = action(async ({ invalidate }) => {
+        invalidate(main);
+
+        for (const i of range(kNumObjects)) {
+          const staticOffset = i * (staticUnitSize / 4);
+
+          staticStorageValues.set(
+            [rand(), rand(), rand(), 1],
+            staticOffset + kColorOffset
+          );
+          staticStorageValues.set(
+            [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+            staticOffset + kOffsetOffset
+          );
+          device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
+        }
       });
+
       return randomize;
     },
     [presentationFormat]

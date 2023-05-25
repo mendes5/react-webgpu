@@ -28,6 +28,12 @@ const GPUDeviceContext = createContext<H<GPUDevice> | null>(null);
 
 export const useForceReRender = () => useContext(ReRenderContext);
 
+export const FRAME_CALLBACK: {
+  current?: FrameCallback;
+} = {
+  current: undefined,
+};
+
 export const useGPUDevice = (): H<GPUDevice> | null => {
   const device = useContext(GPUDeviceContext);
 
@@ -42,6 +48,10 @@ type Props = {
   fallback?: ReactNode | undefined;
   loading?: ReactNode | undefined;
   render?: boolean;
+};
+
+const invalidate = (callback: FrameCallback) => {
+  callback.enabled = true;
 };
 
 export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
@@ -130,18 +140,23 @@ export const WebGPUDevice: FC<PropsWithChildren<Props>> = ({
           );
 
           for (const action of actions) {
-            action({ time, encoder, renderToken }).catch(console.error);
+            action({ time, encoder, renderToken, invalidate }).catch(
+              console.error
+            );
             actionRef.current!.delete(action);
           }
 
           for (const frame of frames) {
             if (frame.enabled) {
+              FRAME_CALLBACK.current = frame;
               frame.callback({ time, encoder });
             }
             if (frame.kind === "once") {
               frame.enabled = false;
             }
           }
+
+          FRAME_CALLBACK.current = undefined;
 
           const commandBuffer = encoder.finish();
 

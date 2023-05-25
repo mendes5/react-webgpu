@@ -1,13 +1,12 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { useRef, type FC } from "react";
+import { type FC } from "react";
 import {
   usePresentationFormat,
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useFrame } from "~/webgpu/per-frame";
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useCanvas } from "~/webgpu/use-canvas";
@@ -52,8 +51,6 @@ const Example: FC = () => {
   const [mips, toggleMips] = useToggle(true);
 
   const presentationFormat = usePresentationFormat();
-
-  const frameRef = useRef<(time: number) => void>();
 
   useGPU(
     async ({ device, frame, gpu }) => {
@@ -238,10 +235,6 @@ const Example: FC = () => {
   );
 
   const canvas = useWebGPUCanvas();
-
-  useFrame((time) => {
-    frameRef.current?.(time);
-  });
 
   return (
     <ToOverlay>
