@@ -197,7 +197,7 @@ const Example: FC = () => {
           pass.draw(3);
           pass.end();
         },
-        [value, type, presentationFormat, sampling]
+        [pipeline]
       );
     },
     [value, type, presentationFormat, sampling]
