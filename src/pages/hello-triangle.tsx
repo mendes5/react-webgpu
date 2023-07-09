@@ -4,16 +4,25 @@ import Head from "next/head";
 import { type FC } from "react";
 import { usePresentationFormat, useWebGPUContext } from "~/webgpu/canvas";
 import { WebGPUApp } from "~/utils/webgpu-app";
-import { useGPU } from "~/webgpu/use-gpu";
+import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import {
+  createRenderPipeline,
+  createShaderModule,
+  pushFrame,
+} from "~/webgpu/web-gpu-plugin";
 
 const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
 
   const context = useWebGPUContext();
 
-  useGPU(
-    async ({ frame, gpu }) => {
-      const shader = gpu.createShaderModule({
+  useGPUButBetter(
+    function* () {
+      // TODO: this is pretty bad...
+      // make it so you can just set the type
+      // of the variable instead of doing
+      // type assertions as it _can_ be less ugly
+      const shader = (yield createShaderModule({
         label: "our hardcoded red triangle shader",
         code: /* wgsl */ `
           @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> @builtin(position) vec4f {
@@ -29,9 +38,9 @@ const Example: FC = () => {
             return vec4f(1.0, 0.0, 0.0, 1.0);
           }
         `,
-      });
+      })) as GPUShaderModule;
 
-      const pipeline = await gpu.createRenderPipelineAsync({
+      const pipeline = (yield createRenderPipeline({
         label: "Main render pipeline",
         layout: "auto",
         vertex: {
@@ -43,9 +52,9 @@ const Example: FC = () => {
           entryPoint: "fsMain",
           targets: [{ format: presentationFormat }],
         },
-      });
+      })) as GPURenderPipeline;
 
-      frame.main!(({ encoder }) => {
+      yield pushFrame(({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
