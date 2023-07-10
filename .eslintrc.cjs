@@ -10,6 +10,10 @@ const config = {
       ],
       files: ["*.ts", "*.tsx"],
       rules: {
+        // Disabled since otherwise the generators get pretty ugly
+        "@typescript-eslint/no-unsafe-assignment": "off",
+        // Disabled since otherwise the generators get pretty ugly
+        "@typescript-eslint/no-explicit-any": "off",
         // Disabled since it is bugging in some cases
         "@typescript-eslint/no-floating-promises": "off",
         // Disabled since in some cases the type

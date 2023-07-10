@@ -5,7 +5,7 @@ import { GPURendererContext } from "./use-gpu";
 import { webGPUPluginCreator } from "./web-gpu-plugin";
 
 export function useGPUButBetter<T extends unknown[]>(
-  handler: () => Generator,
+  handler: () => Generator<any, any, any>,
   args: T
 ) {
   const instanceRef = useRef<SyncFiberGenerator>();

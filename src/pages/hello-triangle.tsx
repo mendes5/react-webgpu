@@ -18,11 +18,7 @@ const Example: FC = () => {
 
   useGPUButBetter(
     function* () {
-      // TODO: this is pretty bad...
-      // make it so you can just set the type
-      // of the variable instead of doing
-      // type assertions as it _can_ be less ugly
-      const shader = (yield createShaderModule({
+      const shader: GPUShaderModule = yield createShaderModule({
         label: "our hardcoded red triangle shader",
         code: /* wgsl */ `
           @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> @builtin(position) vec4f {
@@ -38,9 +34,9 @@ const Example: FC = () => {
             return vec4f(1.0, 0.0, 0.0, 1.0);
           }
         `,
-      })) as GPUShaderModule;
+      });
 
-      const pipeline = (yield createRenderPipeline({
+      const pipeline: GPURenderPipeline = yield createRenderPipeline({
         label: "Main render pipeline",
         layout: "auto",
         vertex: {
@@ -52,7 +48,7 @@ const Example: FC = () => {
           entryPoint: "fsMain",
           targets: [{ format: presentationFormat }],
         },
-      })) as GPURenderPipeline;
+      });
 
       yield pushFrame(({ encoder }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
