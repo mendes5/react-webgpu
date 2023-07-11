@@ -80,9 +80,11 @@ export const pushFrame = r(function* (
 export type FrameBag = {
   time: number;
   encoder: GPUCommandEncoder;
+  queue: GPUQueue;
 };
 
 export type ActionBag = {
+  queue: GPUQueue;
   invalidate: (callback: FrameCallback) => void;
   time: number;
   encoder: GPUCommandEncoder;

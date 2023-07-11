@@ -84,6 +84,7 @@ const globalResourceHash = (desc: GPUObjectDescriptorBase) =>
 export type FrameBag = {
   time: number;
   encoder: GPUCommandEncoder;
+  queue: GPUQueue;
 };
 
 export type ActionBag = {
@@ -91,6 +92,7 @@ export type ActionBag = {
   time: number;
   encoder: GPUCommandEncoder;
   renderToken: Promise<number>;
+  queue: GPUQueue;
 };
 
 export type FrameCallback = {

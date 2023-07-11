@@ -1,7 +1,7 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-import { type FC } from "react";
+import { useState, type FC } from "react";
 import {
   usePresentationFormat,
   useWebGPUCanvas,
@@ -10,7 +10,21 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
-import { useGPU } from "~/webgpu/use-gpu";
+import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import {
+  type GPUAction,
+  action,
+  createBindGroup,
+  createBuffer,
+  createRenderPipeline,
+  createShaderModule,
+  pushFrame,
+  queueEffect,
+  type FrameCallback,
+  createBindGroupLayout,
+  createPipelineLayout,
+} from "~/webgpu/web-gpu-plugin";
+import { key } from "~/trace";
 
 const Example: FC = () => {
   const canvas = useWebGPUCanvas();
@@ -22,11 +36,15 @@ const Example: FC = () => {
   const kOffsetOffset = 4;
   const kScaleOffset = 0;
 
-  const randomize = useGPU(
-    async ({ action, frame, gpu, device }) => {
-      const shader = gpu.createShaderModule({
-        label: "Uniforms example",
-        code: /* wgsl */ `
+  const [force, setForce] = useState(0);
+
+  const { randomize } =
+    useGPUButBetter(
+      function* () {
+        console.time("ReRun");
+        const shader: GPUShaderModule = yield createShaderModule({
+          label: "Uniforms example",
+          code: /* wgsl */ `
         struct OurStruct {
           color: vec4f,
           offset: vec2f,
@@ -54,137 +72,178 @@ const Example: FC = () => {
           return ourStruct.color;
         }
       `,
-      });
-
-      const pipeline = await gpu.createRenderPipelineAsync({
-        label: "Uniforms example render pipeline",
-        layout: "auto",
-        vertex: {
-          entryPoint: "vsMain",
-          module: shader,
-        },
-        fragment: {
-          entryPoint: "fsMain",
-          module: shader,
-          targets: [{ format: presentationFormat }],
-        },
-      });
-
-      // Probably will need some code
-      // to abstract away this offset calculation
-      const staticUniformBufferSize =
-        4 * 4 + // color is 4 32bit floats (4bytes each)
-        2 * 4 + // offset is 2 32bit floats (4bytes each)
-        2 * 4; // padding
-
-      const uniformBufferSize = 2 * 4; // scale is 2 32bit floats (4bytes each)
-
-      const kNumObjects = 100;
-      const objectInfos = [] as {
-        scale: number;
-        uniformBuffer: GPUBuffer;
-        staticUniformBuffer: GPUBuffer;
-        staticValues: Float32Array;
-        uniformValues: Float32Array;
-        bindGroup: GPUBindGroup;
-      }[];
-
-      for (const i of range(kNumObjects)) {
-        const staticUniformBuffer = gpu.createBuffer({
-          label: `static uniforms for obj: ${i}`,
-          size: staticUniformBufferSize,
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
-        const staticValues = new Float32Array(staticUniformBufferSize / 4);
-        staticValues.set([rand(), rand(), rand(), 1], kColorOffset);
-        staticValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], kOffsetOffset);
+        const bingGroupLayout: GPUBindGroupLayout = yield createBindGroupLayout(
+          {
+            entries: [
+              {
+                binding: 0,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                buffer: { type: "uniform" },
+              },
+              {
+                binding: 1,
+                visibility: GPUShaderStage.VERTEX,
+                buffer: { type: "uniform" },
+              },
+            ],
+          }
+        );
 
-        // Upload once, and then never
-        device.queue.writeBuffer(staticUniformBuffer, 0, staticValues);
-
-        const uniformValues = new Float32Array(uniformBufferSize / 4);
-        const uniformBuffer = gpu.createBuffer({
-          label: `changing uniforms for obj: ${i}`,
-          size: uniformBufferSize,
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        const pipelineLayout: GPUPipelineLayout = yield createPipelineLayout({
+          bindGroupLayouts: [bingGroupLayout],
         });
 
-        const bindGroup = device.createBindGroup({
-          label: `bind group for obj: ${i}`,
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: { buffer: staticUniformBuffer } },
-            { binding: 1, resource: { buffer: uniformBuffer } },
-          ],
+        const pipeline: GPURenderPipeline = yield createRenderPipeline({
+          label: "Uniforms example render pipeline",
+          layout: pipelineLayout,
+          vertex: {
+            entryPoint: "vsMain",
+            module: shader,
+          },
+          fragment: {
+            entryPoint: "fsMain",
+            module: shader,
+            targets: [{ format: presentationFormat }],
+          },
         });
 
-        const out = {
-          scale: rand(0.2, 0.5),
-          uniformBuffer,
-          staticUniformBuffer,
-          staticValues,
-          uniformValues,
-          bindGroup,
-        };
+        // Probably will need some code
+        // to abstract away this offset calculation
+        const staticUniformBufferSize =
+          4 * 4 + // color is 4 32bit floats (4bytes each)
+          2 * 4 + // offset is 2 32bit floats (4bytes each)
+          2 * 4; // padding
 
-        objectInfos.push(out);
-      }
+        const uniformBufferSize = 2 * 4; // scale is 2 32bit floats (4bytes each)
 
-      const randomize = action(async () => {
-        for (const { staticValues, staticUniformBuffer } of objectInfos) {
+        const kNumObjects = 100;
+        const objectInfos = [] as {
+          scale: number;
+          uniformBuffer: GPUBuffer;
+          staticUniformBuffer: GPUBuffer;
+          staticValues: Float32Array;
+          uniformValues: Float32Array;
+          bindGroup: GPUBindGroup;
+        }[];
+
+        for (const i of range(kNumObjects)) {
+          const unkey: () => void = yield key(i);
+
+          const staticUniformBuffer: GPUBuffer = yield createBuffer({
+            label: `static uniforms for obj: ${i}`,
+            size: staticUniformBufferSize,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
+
+          const staticValues = new Float32Array(staticUniformBufferSize / 4);
           staticValues.set([rand(), rand(), rand(), 1], kColorOffset);
           staticValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], kOffsetOffset);
-          device.queue.writeBuffer(staticUniformBuffer, 0, staticValues);
+
+          // Upload once, and then never
+          yield queueEffect(
+            (q) => q.writeBuffer(staticUniformBuffer, 0, staticValues),
+            [staticUniformBuffer]
+          );
+
+          const uniformValues = new Float32Array(uniformBufferSize / 4);
+          const uniformBuffer: GPUBuffer = yield createBuffer({
+            label: `changing uniforms for obj: ${i}`,
+            size: uniformBufferSize,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
+
+          const bindGroup: GPUBindGroup = yield createBindGroup({
+            label: `bind group for obj: ${i}`,
+            layout: bingGroupLayout,
+            entries: [
+              { binding: 0, resource: { buffer: staticUniformBuffer } },
+              { binding: 1, resource: { buffer: uniformBuffer } },
+            ],
+          });
+
+          const out = {
+            scale: rand(0.2, 0.5),
+            uniformBuffer,
+            staticUniformBuffer,
+            staticValues,
+            uniformValues,
+            bindGroup,
+          };
+
+          objectInfos.push(out);
+          unkey();
         }
-      });
 
-      frame.main!(({ encoder }) => {
-        const renderPassDescriptor: GPURenderPassDescriptor = {
-          label: "our basic canvas renderPass",
-          colorAttachments: [
-            {
-              view: context.getCurrentTexture().createView(),
-              clearValue: [0.3, 0.3, 0.3, 1],
-              loadOp: "clear",
-              storeOp: "store",
-            },
-          ],
-        };
+        const main: FrameCallback = yield pushFrame(({ encoder, queue }) => {
+          const renderPassDescriptor: GPURenderPassDescriptor = {
+            label: "our basic canvas renderPass",
+            colorAttachments: [
+              {
+                view: context.getCurrentTexture().createView(),
+                clearValue: [0.3, 0.3, 0.3, 1],
+                loadOp: "clear",
+                storeOp: "store",
+              },
+            ],
+          };
 
-        const pass = encoder.beginRenderPass(renderPassDescriptor);
-        pass.setPipeline(pipeline);
+          const pass = encoder.beginRenderPass(renderPassDescriptor);
+          pass.setPipeline(pipeline);
 
-        const aspect = canvas.width / canvas.height;
+          const aspect = canvas.width / canvas.height;
 
-        for (const {
-          scale,
-          bindGroup,
-          uniformBuffer,
-          uniformValues,
-        } of objectInfos) {
-          uniformValues.set([scale / aspect, scale], kScaleOffset);
-          device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
-          pass.setBindGroup(0, bindGroup);
-          pass.draw(3);
-        }
-        pass.end();
-        // TODO:: action execution should rerender
-      });
+          for (const {
+            scale,
+            bindGroup,
+            uniformBuffer,
+            uniformValues,
+          } of objectInfos) {
+            uniformValues.set([scale / aspect, scale], kScaleOffset);
+            queue.writeBuffer(uniformBuffer, 0, uniformValues);
+            pass.setBindGroup(0, bindGroup);
+            pass.draw(3);
+          }
+          pass.end();
+        }, []);
 
-      return randomize;
-    },
-    [presentationFormat]
-  );
+        const randomize: GPUAction = yield action(
+          async ({ queue, invalidate }) => {
+            for (const { staticValues, staticUniformBuffer } of objectInfos) {
+              staticValues.set([rand(), rand(), rand(), 1], kColorOffset);
+              staticValues.set(
+                [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+                kOffsetOffset
+              );
+              queue.writeBuffer(staticUniformBuffer, 0, staticValues);
+            }
+            invalidate(main);
+          }
+        );
+        console.timeEnd("ReRun");
+
+        return { randomize };
+      },
+      [presentationFormat, force]
+    ) ?? {};
 
   return (
     <ToOverlay>
       <button
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
         disabled={!randomize}
-        onClick={randomize}
+        onClick={() => {
+          randomize().catch(console.error);
+        }}
       >
         Randomize
+      </button>
+      <button
+        className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
+        onClick={() => setForce((x) => x + 1)}
+      >
+        Force rerender
       </button>
     </ToOverlay>
   );
