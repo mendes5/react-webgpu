@@ -155,6 +155,11 @@ const SAMPLER_CACHE: Map<GPUDevice, Map<string, H<GPUSampler>>> = new Map();
 
 const SHADER_CACHE: Map<GPUDevice, Map<string, H<GPUShaderModule>>> = new Map();
 
+const BIND_GROUP_CACHE: Map<
+  GPUDevice,
+  Map<string, H<GPUBindGroup>>
+> = new Map();
+
 const BIND_GROUP_LAYOUT_CACHE: Map<
   GPUDevice,
   Map<string, H<GPUBindGroupLayout>>
@@ -394,6 +399,19 @@ export const webGPUPluginCreator =
 
           cache.set(resourceKey, resource);
 
+          Object.assign(resource, {
+            getBindGroupLayout(...args: unknown[]) {
+              const bindGroupLayout: GPUTexture =
+                GPURenderPipeline.prototype.getBindGroupLayout.call(
+                  this,
+                  ...args
+                );
+              return Object.assign(bindGroupLayout, {
+                instanceId: `${String(args[0])}-${resource.instanceId}`,
+              });
+            },
+          });
+
           return resource;
         } else if ("createComputePipeline" in call) {
           let cache = COMPUTE_PIPELINE_CACHE.get(device);
@@ -507,28 +525,44 @@ export const webGPUPluginCreator =
 
           return resource;
         } else if ("createBindGroup" in call) {
+          let cache = BIND_GROUP_CACHE.get(device);
+          if (!cache) {
+            const newCache = new Map();
+            cache = newCache;
+            BIND_GROUP_CACHE.set(device, cache);
+            device.lost
+              .then(() => {
+                BIND_GROUP_CACHE.delete(device);
+                const size = newCache.size;
+                newCache.clear();
+                log(
+                  `Cleared ${size} items from bind group cache of device ${device.instanceId}`
+                );
+              })
+              .catch(console.error);
+          }
+
           const resourceHash = localResourceHash(call.createBindGroup, device);
           const existing = ctx.bindGroups.get(key);
 
-          if (existing) {
-            if (existing.hash === resourceHash) {
-              return existing.value;
-            } else {
-              log(
-                `bindGroup ${
-                  shortId(existing.value.instanceId) ?? "<unnamed>"
-                } for fiber ${fiberHash} will be replaced since its hash changed`
-              );
-            }
+          if (existing && existing.hash === resourceHash) {
+            return existing.value;
+          }
+
+          if (cache.has(resourceHash)) {
+            const cached = cache.get(resourceHash);
+            ctx.bindGroups.set(key, { hash: resourceHash, value: cached });
+            return cached;
           }
 
           const resource = hashed(device.createBindGroup(call.createBindGroup));
           ctx.bindGroups.set(key, { hash: resourceHash, value: resource });
+          cache.set(resourceHash, resource);
 
           log(
             `Created bindGroup ${
               call.createBindGroup.label ?? "<unnamed>"
-            } (${shortId(resource.instanceId)}) for fiber ${fiberHash}`
+            } (${shortId(resource.instanceId)})`
           );
 
           return resource;
@@ -586,6 +620,16 @@ export const webGPUPluginCreator =
               call.createTexture.label ?? "<unnamed>"
             } ${shortId(resource.instanceId)} for fiber ${fiberHash}`
           );
+
+          Object.assign(resource, {
+            createView(...args: unknown[]) {
+              const textureView: GPUTexture =
+                GPUTexture.prototype.createView.call(this, ...args);
+              return Object.assign(textureView, {
+                instanceId: resource.instanceId,
+              });
+            },
+          });
 
           return resource;
         } else if ("queueEffect" in call) {
