@@ -20,7 +20,7 @@ export const createAsyncFiberRoot = <T extends unknown[], R>(
   gen: (...args: T) => Generator<any, R>,
   plugins: Plugin[] = []
 ): AsyncFiberGenerator<T, R> => {
-  const ctx = createFiber();
+  const fiber = createFiber();
   const lock = createLock<R>();
 
   const instantiatedPlugins = [
@@ -29,18 +29,18 @@ export const createAsyncFiberRoot = <T extends unknown[], R>(
     usePlugin,
     keyPlugin,
     memoPlugin,
-  ].map((plugin) => plugin(ctx));
+  ].map((plugin) => plugin(fiber));
 
   const tick = (...args: T) =>
     lock(
       async () =>
-        enterScopeAsync(gen(...args), ctx, instantiatedPlugins) as Promise<R>
+        enterScopeAsync(gen(...args), fiber, instantiatedPlugins) as Promise<R>
     );
 
   tick.dispose = () => {
     return lock(
       async () =>
-        disposeRecursive(ctx.traceHead, instantiatedPlugins) as unknown as R
+        disposeRecursive(fiber.traceHead, instantiatedPlugins) as unknown as R
     ).then(() => undefined);
   };
 
@@ -52,11 +52,16 @@ export type SyncFiberGenerator<T extends unknown[] = [], R = undefined> = {
   dispose(): void;
 };
 
+export type SyncClosureFiberGenerator<R = undefined> = {
+  (closure: Generator<any, R>): R;
+  dispose(): void;
+};
+
 export const createSyncFiberRoot = <T extends unknown[], R>(
   gen: (...args: T) => Generator<any, R>,
   plugins: Plugin[] = []
 ): SyncFiberGenerator<T, R> => {
-  const ctx = createFiber();
+  const fiber = createFiber();
 
   const instantiatedPlugins = [
     ...plugins,
@@ -64,13 +69,35 @@ export const createSyncFiberRoot = <T extends unknown[], R>(
     usePlugin,
     keyPlugin,
     memoPlugin,
-  ].map((plugin) => plugin(ctx));
+  ].map((plugin) => plugin(fiber));
 
   const tick = (...args: T): R => {
-    return enterScopeSync(gen(...args), ctx, instantiatedPlugins) as R;
+    return enterScopeSync(gen(...args), fiber, instantiatedPlugins) as R;
   };
 
-  tick.dispose = () => disposeRecursive(ctx.traceHead, instantiatedPlugins);
+  tick.dispose = () => disposeRecursive(fiber.traceHead, instantiatedPlugins);
+
+  return tick;
+};
+
+export const createSyncClosureFiberRoot = <R>(
+  plugins: Plugin[] = []
+): SyncClosureFiberGenerator<R> => {
+  const fiber = createFiber();
+
+  const instantiatedPlugins = [
+    ...plugins,
+    refPlugin,
+    usePlugin,
+    keyPlugin,
+    memoPlugin,
+  ].map((plugin) => plugin(fiber));
+
+  const tick = <R>(closure: Generator<any, R>): R => {
+    return enterScopeSync(closure, fiber, instantiatedPlugins) as R;
+  };
+
+  tick.dispose = () => disposeRecursive(fiber.traceHead, instantiatedPlugins);
 
   return tick;
 };

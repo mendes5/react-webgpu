@@ -1,31 +1,33 @@
 import { useContext, useEffect, useRef } from "react";
-import { type SyncFiberGenerator, createSyncFiberRoot } from "~/trace";
+import {
+  type SyncClosureFiberGenerator,
+  createSyncClosureFiberRoot,
+} from "~/trace";
 import { useGPUDevice } from "./gpu-device";
 import { GPURendererContext } from "./use-gpu";
 import { webGPUPluginCreator } from "./web-gpu-plugin";
 
-export function useGPUButBetter<T extends unknown[]>(
+export function useGPUButBetter(
   handler: () => Generator<any, any, any>,
-  args: T
+  deps: unknown[]
 ) {
-  const instanceRef = useRef<SyncFiberGenerator>();
+  const instanceRef = useRef<SyncClosureFiberGenerator>();
   const rendererContext = useContext(GPURendererContext);
 
   const device = useGPUDevice();
 
-  // TODO: review deps
-
   useEffect(() => {
     if (device) {
-      instanceRef.current = createSyncFiberRoot(handler, [
+      instanceRef.current = createSyncClosureFiberRoot([
         webGPUPluginCreator(device, rendererContext),
       ]);
     }
-  }, [device]);
+  }, [device, rendererContext]);
 
   useEffect(() => {
-    instanceRef.current?.();
-  }, args);
+    // eslint-disable-next-line
+    instanceRef.current?.(handler());
+  }, [device, ...deps]);
 
   useEffect(
     () => () => {

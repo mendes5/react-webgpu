@@ -7,7 +7,12 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { useToggle } from "usehooks-ts";
 import { ToOverlay } from "~/utils/overlay";
 import { match } from "ts-pattern";
-import { useGPU } from "~/webgpu/use-gpu";
+import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import {
+  createRenderPipeline,
+  createShaderModule,
+  pushFrame,
+} from "~/webgpu/web-gpu-plugin";
 
 const InterpolationType = {
   /**
@@ -65,9 +70,9 @@ const Example: FC = () => {
 
   const context = useWebGPUContext();
 
-  useGPU(
-    async ({ frame, gpu }) => {
-      const shader = gpu.createShaderModule({
+  useGPUButBetter(
+    function* () {
+      const shader: GPUShaderModule = yield createShaderModule({
         label: "rgb  triangle shader",
         code: value
           ? /* wgsl */ `
@@ -160,7 +165,7 @@ const Example: FC = () => {
       `,
       });
 
-      const pipeline = await gpu.createRenderPipelineAsync({
+      const pipeline: GPURenderPipeline = yield createRenderPipeline({
         label: "Main render pipeline",
         layout: "auto",
         vertex: {
@@ -175,7 +180,7 @@ const Example: FC = () => {
         },
       });
 
-      frame.main!(
+      yield pushFrame(
         ({ encoder }) => {
           const renderPassDescriptor: GPURenderPassDescriptor = {
             label: "our basic canvas  renderPass",

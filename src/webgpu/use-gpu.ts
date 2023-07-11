@@ -200,7 +200,7 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
 
   useEffect(
     () => () => {
-      for (const key of Object.keys(depsRef.current!)) {
+      for (const key of Object.keys(depsRef.current)) {
         const frame = rendererContext.get(key);
 
         if (frame) {
@@ -547,8 +547,8 @@ export function useGPU<T extends Record<string, unknown | null | undefined>, R>(
               const hasDeps = Array.isArray(deps);
 
               if (hasDeps) {
-                const isFirstRender = !depsRef.current!.has(ownKey);
-                const lastDeps = depsRef.current!.get(ownKey);
+                const isFirstRender = !depsRef.current.has(ownKey);
+                const lastDeps = depsRef.current.get(ownKey);
 
                 const areSame = isSameDependencies(deps, lastDeps);
                 const enabled = !areSame || isFirstRender;
@@ -661,7 +661,7 @@ export const useRefTrap = <T>(ref?: T): MutableRefObject<T | undefined> => {
     const value = { current: ref };
     Object.defineProperty(value, "current", {
       set(value) {
-        const renderers = rendererRefs.current!;
+        const renderers = rendererRefs.current;
 
         for (const frame of renderers) {
           if (!frame.valid) {
@@ -676,7 +676,7 @@ export const useRefTrap = <T>(ref?: T): MutableRefObject<T | undefined> => {
         return fake.current;
       },
       get() {
-        const renderers = rendererRefs.current!;
+        const renderers = rendererRefs.current;
 
         if (FRAME_CALLBACK.current && FRAME_CALLBACK.current.kind === "once") {
           renderers.add(FRAME_CALLBACK.current);
