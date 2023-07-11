@@ -4,7 +4,7 @@ import {
   createSyncClosureFiberRoot,
 } from "~/trace";
 import { useGPUDevice } from "./gpu-device";
-import { GPURendererContext } from "./use-gpu";
+import { GPUActionContext, GPURendererContext } from "./use-gpu";
 import { webGPUPluginCreator } from "./web-gpu-plugin";
 
 export function useGPUButBetter<T>(
@@ -13,6 +13,7 @@ export function useGPUButBetter<T>(
 ): T {
   const instanceRef = useRef<SyncClosureFiberGenerator<T>>();
   const rendererContext = useContext(GPURendererContext);
+  const actionContext = useContext(GPUActionContext);
 
   const device = useGPUDevice();
 
@@ -21,10 +22,10 @@ export function useGPUButBetter<T>(
   useEffect(() => {
     if (device) {
       instanceRef.current = createSyncClosureFiberRoot([
-        webGPUPluginCreator(device, rendererContext),
+        webGPUPluginCreator(device, rendererContext, actionContext),
       ]);
     }
-  }, [device, rendererContext]);
+  }, [device, rendererContext, actionContext]);
 
   useEffect(() => {
     // eslint-disable-next-line
@@ -35,7 +36,7 @@ export function useGPUButBetter<T>(
     () => () => {
       instanceRef.current?.dispose();
     },
-    [device]
+    [device, rendererContext, actionContext]
   );
 
   return result;
