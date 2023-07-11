@@ -357,7 +357,7 @@ const Example: FC = () => {
 
         objectInfos.forEach(
           ({ bindGroups, matrix, uniformBuffer, uniformValues }, i) => {
-            const bindGroup = bindGroups[toggleRef.current!]!;
+            const bindGroup = bindGroups[toggleRef.current];
 
             const xSpacing = 1.2;
             const ySpacing = 0.7;
@@ -393,7 +393,7 @@ const Example: FC = () => {
       <button
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
         onClick={() => {
-          toggleRef.current = (toggleRef.current! + 1) % 3;
+          toggleRef.current = (toggleRef.current + 1) % 3;
         }}
       >
         Change Texture

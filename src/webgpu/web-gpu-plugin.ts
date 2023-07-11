@@ -147,7 +147,6 @@ interface WebGPUFrameContext extends FrameContext {
   queueEffectsDeps?: Record<string, unknown[]>;
   // Local Resources
   buffers?: Map<string, LocalResource<H<GPUBuffer>>>;
-  bindGroups?: Map<string, LocalResource<H<GPUBindGroup>>>;
   textures?: Map<string, LocalResource<H<GPUTexture>>>;
 }
 
@@ -285,10 +284,6 @@ export const webGPUPluginCreator =
 
         if (!ctx.queueEffectsDeps) {
           ctx.queueEffectsDeps = {};
-        }
-
-        if (!ctx.bindGroups) {
-          ctx.bindGroups = new Map();
         }
 
         if ("createShaderModule" in call) {
@@ -542,21 +537,11 @@ export const webGPUPluginCreator =
               .catch(console.error);
           }
 
-          const resourceHash = localResourceHash(call.createBindGroup, device);
-          const existing = ctx.bindGroups.get(key);
-
-          if (existing && existing.hash === resourceHash) {
-            return existing.value;
-          }
-
-          if (cache.has(resourceHash)) {
-            const cached = cache.get(resourceHash);
-            ctx.bindGroups.set(key, { hash: resourceHash, value: cached });
-            return cached;
-          }
+          const resourceHash = globalResourceHash(call.createBindGroup);
+          const fromCache = cache.get(resourceHash);
+          if (fromCache) return cache.get(resourceHash);
 
           const resource = hashed(device.createBindGroup(call.createBindGroup));
-          ctx.bindGroups.set(key, { hash: resourceHash, value: resource });
           cache.set(resourceHash, resource);
 
           log(

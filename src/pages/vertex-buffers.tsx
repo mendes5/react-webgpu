@@ -238,7 +238,9 @@ const Example: FC = () => {
     <ToOverlay>
       <button
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
-        onClick={randomize}
+        onClick={() => {
+          randomize();
+        }}
         disabled={!randomize}
       >
         Randomize

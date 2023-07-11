@@ -13,9 +13,7 @@ import { useRefTrap } from "~/webgpu/use-gpu";
 import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
 import {
   createBindGroup,
-  createBindGroupLayout,
   createBuffer,
-  createPipelineLayout,
   createRenderPipeline,
   createSampler,
   createShaderModule,

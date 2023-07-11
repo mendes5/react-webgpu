@@ -299,7 +299,9 @@ const Example: FC = () => {
       <button
         className="rounded bg-slate-900 px-4 py-2 font-bold text-white"
         disabled={!randomize}
-        onClick={randomize}
+        onClick={() => {
+          randomize();
+        }}
       >
         Randomize
       </button>
