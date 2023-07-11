@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import {
   type SyncClosureFiberGenerator,
   createSyncClosureFiberRoot,
@@ -7,14 +7,16 @@ import { useGPUDevice } from "./gpu-device";
 import { GPURendererContext } from "./use-gpu";
 import { webGPUPluginCreator } from "./web-gpu-plugin";
 
-export function useGPUButBetter(
-  handler: () => Generator<any, any, any>,
+export function useGPUButBetter<T>(
+  handler: () => Generator<any, T, any>,
   deps: unknown[]
-) {
-  const instanceRef = useRef<SyncClosureFiberGenerator>();
+): T {
+  const instanceRef = useRef<SyncClosureFiberGenerator<T>>();
   const rendererContext = useContext(GPURendererContext);
 
   const device = useGPUDevice();
+
+  const [result, setResult] = useState<T>();
 
   useEffect(() => {
     if (device) {
@@ -26,7 +28,7 @@ export function useGPUButBetter(
 
   useEffect(() => {
     // eslint-disable-next-line
-    instanceRef.current?.(handler());
+    setResult(instanceRef.current?.(handler()));
   }, [device, ...deps]);
 
   useEffect(
@@ -35,4 +37,6 @@ export function useGPUButBetter(
     },
     [device]
   );
+
+  return result;
 }
