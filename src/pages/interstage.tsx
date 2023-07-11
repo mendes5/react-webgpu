@@ -72,29 +72,16 @@ const Example: FC = () => {
 
   useGPUButBetter(
     function* () {
+      const $interpolate = formatInterpolation(type, sampling);
       const shader: GPUShaderModule = yield createShaderModule({
         label: "rgb  triangle shader",
         code: value
           ? /* wgsl */ `
             struct OurVertexShaderOutput {
-              // Note @builtin(position) is accessible in the 
-              // vertex shader too, so you can either access fsInput.position
-              // or @builtin(position) directly
               @builtin(position) position: vec4f,
-    
-              // Note that if the inter-stage variable is an integer type then you must set its interpolation to flat.
-              // @location(2) @interpolate(linear, center) myVariableFoo: vec4f;
-              @location(0) @interpolate(${formatInterpolation(
-                type,
-                sampling
-              )}) color: vec4f,
+              @location(0) @interpolate(${$interpolate}) color: vec4f,
             };
             
-            // this shader will be invoked 3 times
-            // since we called pass.draw(3);
-            // with it, each time vsMain is called
-            // @builtin(vertex_index)
-            // changes with the vertex id 
             @vertex fn vsMain(@builtin(vertex_index) vertexIndex : u32) -> OurVertexShaderOutput {
               var pos = array<vec2f, 3>(
                 vec2f( 0.0,  0.5),  // top center
@@ -112,30 +99,12 @@ const Example: FC = () => {
                 return vsOutput;
             }
     
-            // The @location(0) can mean different things based of 
-            // where they are used
-            // if it is used between an vertex shader and fragment shader
-            // the data in the location will be interpolated
-            // if it is used as the output of the fragment shader
-            // the computed result will be placed into the view at location(0)
-    
-            // interpolation settings must be the same
             @fragment fn fsMain(@location(0) @interpolate(${formatInterpolation(
               type,
               sampling
             )}) color: vec4f) -> @location(0) vec4f {
               return color;
             }
-    
-            // Thats why this shader works too
-            // we can either receive the full OurVertexShaderOutput since it is
-            // the output of the vertex shader
-            // or specific data by referencing locations manually
-            // It probably doesn't has any benefits tough since the data is already
-            // tightly packed, so this is mostly a convenience
-            // @fragment fn fsMain(fsInput: OurVertexShaderOutput) -> @location(0) vec4f {
-            //   return fsInput.color;
-            // }
           `
           : /* wgsl */ `
             struct OurVertexShaderOutput {
@@ -185,9 +154,6 @@ const Example: FC = () => {
           const renderPassDescriptor: GPURenderPassDescriptor = {
             label: "our basic canvas  renderPass",
             colorAttachments: [
-              // This is the location(0)
-              // since we use context.getCurrentTexture as the view
-              // it will render to the canvas
               {
                 view: context.getCurrentTexture().createView(),
                 clearValue: [0.0, 0.0, 0.0, 1],
