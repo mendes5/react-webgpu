@@ -39,6 +39,11 @@ export const createPipelineLayout = r(function* (
 ) {
   return yield { WebGPU, call: { createPipelineLayout: descriptor } };
 });
+
+// PLugins should be alot easier
+// Like, dont return generator objects
+// Just build the entire API arround yielding stuff
+// This R hack could just be a Object.assign(x, { recordedPosition: getStackFrame(2) })
 export const createBuffer = r(function* (descriptor: GPUBufferDescriptor) {
   return yield { WebGPU, call: { createBuffer: descriptor } };
 });
@@ -129,13 +134,19 @@ type PluginYield = {
   call: PluginCalls;
 };
 
+type LocalResource<T> = {
+  hash: string;
+  value: T;
+};
+
 interface WebGPUFrameContext extends FrameContext {
   calls?: Record<string, unknown>;
   frameDeps?: Record<string, unknown[]>;
-  buffers?: Map<string, H<GPUBuffer>>;
-  bindGroups?: Map<string, H<GPUBindGroup>>;
-  textures?: Map<string, H<GPUTexture>>;
   queueEffectsDeps?: Record<string, unknown[]>;
+  // Local Resources
+  buffers?: Map<string, LocalResource<H<GPUBuffer>>>;
+  bindGroups?: Map<string, LocalResource<H<GPUBindGroup>>>;
+  textures?: Map<string, LocalResource<H<GPUTexture>>>;
 }
 
 const SAMPLER_CACHE: Map<GPUDevice, Map<string, H<GPUSampler>>> = new Map();
@@ -233,12 +244,12 @@ export const webGPUPluginCreator =
       dispose: (ctx: WebGPUFrameContext) => {
         if (ctx.textures)
           for (const texture of ctx.textures.values()) {
-            texture.destroy();
+            texture.value.destroy();
           }
         if (ctx.buffers)
           for (const buffer of ctx.buffers.values()) {
             // TODO: do we need to check if it is mapped?
-            buffer.destroy();
+            buffer.value.destroy();
           }
       },
       exec: (
@@ -494,15 +505,23 @@ export const webGPUPluginCreator =
 
           return resource;
         } else if ("createBindGroup" in call) {
-          const key = localResourceHash(call.createBindGroup, device);
+          const resourceHash = localResourceHash(call.createBindGroup, device);
           const existing = ctx.bindGroups.get(key);
 
           if (existing) {
-            return existing;
+            if (existing.hash === resourceHash) {
+              return existing.value;
+            } else {
+              log(
+                `bindGroup ${
+                  shortId(existing.value.instanceId) ?? "<unnamed>"
+                } for fiber ${fiberHash} will be replaced since its hash changed`
+              );
+            }
           }
 
           const resource = hashed(device.createBindGroup(call.createBindGroup));
-          ctx.bindGroups.set(key, resource);
+          ctx.bindGroups.set(key, { hash: resourceHash, value: resource });
 
           log(
             `Created bindGroup ${
@@ -512,38 +531,60 @@ export const webGPUPluginCreator =
 
           return resource;
         } else if ("createBuffer" in call) {
-          const key = localResourceHash(call.createBuffer, device);
+          const resourceHash = localResourceHash(call.createBuffer, device);
           const existing = ctx.buffers.get(key);
 
           if (existing) {
-            return existing;
+            if (existing.hash === resourceHash) {
+              return existing.value;
+            } else {
+              existing.value.destroy();
+
+              log(
+                `Destroying buffer ${shortId(
+                  existing.value.instanceId
+                )} for fiber ${fiberHash} since its hash changed`
+              );
+            }
           }
 
           const resource = hashed(device.createBuffer(call.createBuffer));
-          ctx.buffers.set(key, resource);
+          ctx.buffers.set(key, { hash: resourceHash, value: resource });
 
           log(
             `Created buffer ${
               call.createBuffer.label ?? "<unnamed>"
             } (${shortId(resource.instanceId)}) for fiber ${fiberHash}`
           );
+
           return resource;
         } else if ("createTexture" in call) {
-          const key = localResourceHash(call.createTexture, device);
+          const resourceKey = localResourceHash(call.createTexture, device);
           const existing = ctx.textures.get(key);
 
           if (existing) {
-            return existing;
+            if (existing.hash === resourceKey) {
+              return existing.value;
+            } else {
+              existing.value.destroy();
+
+              log(
+                `Destroying texture ${shortId(
+                  existing.value.instanceId
+                )} for fiber ${fiberHash} since its hash changed`
+              );
+            }
           }
 
           const resource = hashed(device.createTexture(call.createTexture));
-          ctx.textures.set(key, resource);
+          ctx.textures.set(key, { value: resource, hash: resourceKey });
 
           log(
             `Created texture ${
               call.createTexture.label ?? "<unnamed>"
             } ${shortId(resource.instanceId)} for fiber ${fiberHash}`
           );
+
           return resource;
         } else if ("queueEffect" in call) {
           const cached = ctx.queueEffectsDeps[key];

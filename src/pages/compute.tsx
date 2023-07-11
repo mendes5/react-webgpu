@@ -65,10 +65,6 @@ const Example: FC = () => {
           },
         });
 
-        // TODO: (BUG) this is not destroying the old buffer
-        // and possibly all local resources are not
-        // being replaced in fiber position when they
-        // are replaced
         const workBuffer: GPUBuffer = yield createBuffer({
           label: `work ${String(label)} buffer`,
           size: input.byteLength,
@@ -101,6 +97,7 @@ const Example: FC = () => {
           elapsed: number;
         };
 
+        // TODO: make input stay on the CPU regardless of device id
         const double: GPUAction<DoublingResult> = yield action(
           async ({ encoder, renderToken, time: start }) => {
             const pass = encoder.beginComputePass({
