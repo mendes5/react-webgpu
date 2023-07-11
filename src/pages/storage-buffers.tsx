@@ -12,7 +12,17 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPU } from "~/webgpu/use-gpu";
+import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import {
+  createBindGroup,
+  createBindGroupLayout,
+  createBuffer,
+  createPipelineLayout,
+  createRenderPipeline,
+  createShaderModule,
+  pushFrame,
+  queueEffect,
+} from "~/webgpu/web-gpu-plugin";
 
 const Example: FC = () => {
   const canvas = useWebGPUCanvas();
@@ -20,9 +30,10 @@ const Example: FC = () => {
 
   const presentationFormat = usePresentationFormat();
 
-  useGPU(
-    async ({ frame, gpu, device }) => {
-      const shader = gpu.createShaderModule({
+  useGPUButBetter(
+    function* () {
+      console.time("run");
+      const shader: GPUShaderModule = yield createShaderModule({
         label: "Storage buffers shader module",
         code: /*wgsl*/ `
         struct OurStruct {
@@ -67,9 +78,33 @@ const Example: FC = () => {
       `,
       });
 
-      const pipeline = await gpu.createRenderPipelineAsync({
+      const bindGroupLayout0: GPUBindGroupLayout = yield createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.VERTEX,
+            buffer: { type: "read-only-storage" },
+          },
+          {
+            binding: 1,
+            visibility: GPUShaderStage.VERTEX,
+            buffer: { type: "read-only-storage" },
+          },
+          {
+            binding: 2,
+            visibility: GPUShaderStage.VERTEX,
+            buffer: { type: "read-only-storage" },
+          },
+        ],
+      });
+
+      const pipelineLayout: GPUPipelineLayout = yield createPipelineLayout({
+        bindGroupLayouts: [bindGroupLayout0],
+      });
+
+      const pipeline: GPURenderPipeline = yield createRenderPipeline({
         label: "Storage buffers render pipeline",
-        layout: "auto",
+        layout: pipelineLayout,
         vertex: {
           entryPoint: "vsMain",
           module: shader,
@@ -104,13 +139,13 @@ const Example: FC = () => {
 
       const storageValues = new Float32Array(changingStorageBufferSize / 4);
 
-      const staticStorageBuffer = gpu.createBuffer({
+      const staticStorageBuffer: GPUBuffer = yield createBuffer({
         label: "static storage for objects",
         size: staticStorageBufferSize,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       });
 
-      const changingStorageBuffer = gpu.createBuffer({
+      const changingStorageBuffer: GPUBuffer = yield createBuffer({
         label: "changing storage for objects",
         size: changingStorageBufferSize,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -134,24 +169,30 @@ const Example: FC = () => {
         });
       }
 
-      device.queue.writeBuffer(staticStorageBuffer, 0, staticStorageValues);
+      yield queueEffect(
+        (q) => q.writeBuffer(staticStorageBuffer, 0, staticStorageValues),
+        [staticStorageBuffer]
+      );
 
       const { vertexData, numVertices } = createCircleVerticesNonShadow({
         radius: 0.5,
         innerRadius: 0.25,
       });
 
-      const vertexStorageBuffer = gpu.createBuffer({
+      const vertexStorageBuffer: GPUBuffer = yield createBuffer({
         label: "storage buffer vertices",
         size: vertexData.byteLength,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       });
 
-      device.queue.writeBuffer(vertexStorageBuffer, 0, vertexData);
+      yield queueEffect(
+        (q) => q.writeBuffer(vertexStorageBuffer, 0, vertexData),
+        [vertexStorageBuffer]
+      );
 
-      const bindGroup = device.createBindGroup({
+      const bindGroup: GPUBindGroup = yield createBindGroup({
         label: "bind group for objects",
-        layout: pipeline.getBindGroupLayout(0),
+        layout: bindGroupLayout0,
         entries: [
           { binding: 0, resource: { buffer: staticStorageBuffer } },
           { binding: 1, resource: { buffer: changingStorageBuffer } },
@@ -159,7 +200,7 @@ const Example: FC = () => {
         ],
       });
 
-      frame.main!(({ encoder }) => {
+      yield pushFrame(({ encoder, queue }) => {
         const renderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -183,12 +224,14 @@ const Example: FC = () => {
           storageValues.set([scale / aspect, scale], offset + kScaleOffset); // set the scale
         });
         // upload all scales at once
-        device.queue.writeBuffer(changingStorageBuffer, 0, storageValues);
+        queue.writeBuffer(changingStorageBuffer, 0, storageValues);
 
         pass.setBindGroup(0, bindGroup);
         pass.draw(numVertices, kNumObjects);
         pass.end();
       }, []);
+
+      console.timeEnd("run");
     },
     [presentationFormat]
   );
