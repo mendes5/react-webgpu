@@ -1,10 +1,15 @@
-import { r } from "~/trace";
-import { type FrameContext } from "~/trace/core";
+import {
+  type SyncClosureFiberGenerator,
+  createChildSyncClosureFiberRoot,
+  r,
+} from "~/trace";
+import { type PluginInstance, type FrameContext } from "~/trace/core";
 import { type CallSite } from "~/trace/utils";
 import { type H, hashed, shortId } from "~/utils/other";
 import hash from "object-hash";
 import { log } from "./logger";
 import stringHash from "string-hash";
+import objectHash from "object-hash";
 
 const WebGPU = Symbol("WebGPU");
 
@@ -63,6 +68,11 @@ export const action = r(function* (
 ) {
   return yield { WebGPU, call: { action } };
 });
+
+export const actionG = r(function* (action: (bag: ActionBag) => Generator) {
+  return yield { WebGPU, actionG: { action } };
+});
+
 export const queueEffect = r(function* (
   queueEffect: (queue: GPUQueue) => void,
   deps: unknown[]
@@ -75,6 +85,13 @@ export const pushFrame = r(function* (
   deps?: unknown[]
 ) {
   return yield { WebGPU, call: { pushFrame: frame, deps } };
+});
+
+export const pushFrameG = r(function* (
+  frame: (bag: FrameBag) => Generator,
+  deps?: unknown[]
+) {
+  return yield { WebGPU, call: { pushFrameG: frame, deps } };
 });
 
 export type FrameBag = {
@@ -124,7 +141,14 @@ type PluginCalls =
       deps?: unknown[];
     }
   | {
+      pushFrameG: (bag: FrameBag) => Generator<any, undefined, unknown>;
+      deps?: unknown[];
+    }
+  | {
       action: (bag: ActionBag) => Promise<unknown>;
+    }
+  | {
+      actionG: (bag: ActionBag) => Generator<any, undefined, unknown>;
     }
   | {
       queueEffect: (queue: GPUQueue) => void;
@@ -145,9 +169,11 @@ interface WebGPUFrameContext extends FrameContext {
   calls?: Record<string, unknown>;
   frameDeps?: Record<string, unknown[]>;
   queueEffectsDeps?: Record<string, unknown[]>;
+  actionGenerators?: Record<string, SyncClosureFiberGenerator>;
+  frameGenerators?: Record<string, SyncClosureFiberGenerator>;
   // Local Resources
   buffers?: Map<string, LocalResource<H<GPUBuffer>>>;
-  textures?: Map<string, LocalResource<H<GPUTexture>>>;
+  textures?: Record<string, LocalResource<H<GPUTexture>>>;
 }
 
 const SAMPLER_CACHE: Map<GPUDevice, Map<string, H<GPUSampler>>> = new Map();
@@ -249,19 +275,34 @@ export const webGPUPluginCreator =
         value.WebGPU === WebGPU,
       dispose: (ctx: WebGPUFrameContext) => {
         if (ctx.textures)
-          for (const texture of ctx.textures.values()) {
+          for (const texture of Object.values(ctx.textures)) {
             texture.value.destroy();
+            log(`Destroyed texture ${shortId(texture.hash)}`);
           }
         if (ctx.buffers)
           for (const buffer of ctx.buffers.values()) {
             // TODO: do we need to check if it is mapped?
             buffer.value.destroy();
+            log(`Destroyed buffer ${shortId(buffer.hash)}`);
+          }
+        if (ctx.actionGenerators)
+          for (const fiber of Object.values(ctx.actionGenerators)) {
+            fiber.dispose();
+          }
+        if (ctx.frameGenerators)
+          for (const fiber of Object.values(ctx.frameGenerators)) {
+            fiber.dispose();
+          }
+        if (ctx.frameDeps)
+          for (const key of Object.keys(ctx.frameDeps)) {
+            rendererContext.delete(key);
           }
       },
       exec: (
         { call }: PluginYield,
         callSite: CallSite[],
-        ctx: WebGPUFrameContext
+        ctx: WebGPUFrameContext,
+        allPlugins: PluginInstance[]
       ) => {
         const key = callSite.join("@");
         const fiberHash = stringHash(key);
@@ -279,11 +320,19 @@ export const webGPUPluginCreator =
         }
 
         if (!ctx.textures) {
-          ctx.textures = new Map();
+          ctx.textures = {};
+        }
+
+        if (!ctx.actionGenerators) {
+          ctx.actionGenerators = {};
         }
 
         if (!ctx.queueEffectsDeps) {
           ctx.queueEffectsDeps = {};
+        }
+
+        if (!ctx.frameGenerators) {
+          ctx.frameGenerators = {};
         }
 
         if ("createShaderModule" in call) {
@@ -581,7 +630,7 @@ export const webGPUPluginCreator =
           return resource;
         } else if ("createTexture" in call) {
           const resourceKey = localResourceHash(call.createTexture, device);
-          const existing = ctx.textures.get(key);
+          const existing = ctx.textures[key];
 
           if (existing) {
             if (existing.hash === resourceKey) {
@@ -598,7 +647,7 @@ export const webGPUPluginCreator =
           }
 
           const resource = hashed(device.createTexture(call.createTexture));
-          ctx.textures.set(key, { value: resource, hash: resourceKey });
+          ctx.textures[key] = { value: resource, hash: resourceKey };
 
           log(
             `Created texture ${
@@ -607,11 +656,11 @@ export const webGPUPluginCreator =
           );
 
           Object.assign(resource, {
-            createView(...args: unknown[]) {
+            createView(descriptor: GPUTextureViewDescriptor = {}) {
               const textureView: GPUTexture =
-                GPUTexture.prototype.createView.call(this, ...args);
+                GPUTexture.prototype.createView.call(this, descriptor);
               return Object.assign(textureView, {
-                instanceId: resource.instanceId,
+                instanceId: objectHash(descriptor) + resource.instanceId,
               });
             },
           });
@@ -648,6 +697,34 @@ export const webGPUPluginCreator =
 
             return token;
           };
+        } else if ("actionG" in call) {
+          let fiber: SyncClosureFiberGenerator;
+
+          if (ctx.actionGenerators[key]) {
+            fiber = ctx.actionGenerators[key];
+          } else {
+            fiber = createChildSyncClosureFiberRoot(allPlugins);
+            ctx.actionGenerators[key] = fiber;
+          }
+
+          return () => {
+            const promise = {
+              resolve: (_: unknown): void => undefined,
+              reject: (_: unknown): void => undefined,
+            };
+
+            const token = new Promise((res, rej) => {
+              promise.resolve = res;
+              promise.reject = rej;
+            });
+
+            actionContext.add(async (bag) => {
+              fiber(call.actionG(bag));
+              promise.resolve(undefined);
+            });
+
+            return token;
+          };
         } else if ("pushFrame" in call) {
           const { deps, pushFrame } = call;
           const hasDeps = Array.isArray(deps);
@@ -672,6 +749,49 @@ export const webGPUPluginCreator =
             const frame = {
               valid: true,
               callback: pushFrame,
+              enabled: true,
+              kind: "loop",
+            } as const;
+            rendererContext.set(key, frame);
+            return frame;
+          }
+        } else if ("pushFrameG" in call) {
+          const { deps, pushFrameG } = call;
+          const hasDeps = Array.isArray(deps);
+
+          let fiber: SyncClosureFiberGenerator;
+          if (ctx.frameGenerators[key]) {
+            fiber = ctx.frameGenerators[key];
+          } else {
+            ctx.frameGenerators[key] =
+              createChildSyncClosureFiberRoot(allPlugins);
+            fiber = ctx.frameGenerators[key];
+          }
+
+          if (hasDeps) {
+            const isFirstRender = !ctx.frameDeps[key];
+            const lastDeps = ctx.frameDeps[key];
+
+            const areSame = isSameDependencies(deps, lastDeps);
+            const enabled = !areSame || isFirstRender;
+
+            const frame: FrameCallback = {
+              valid: true,
+              callback: (bag) => {
+                fiber(pushFrameG(bag));
+              },
+              enabled,
+              kind: "once",
+            } as const;
+            ctx.frameDeps[key] = deps;
+            rendererContext.set(key, frame);
+            return frame;
+          } else {
+            const frame: FrameCallback = {
+              valid: true,
+              callback: (bag) => {
+                fiber(pushFrameG(bag));
+              },
               enabled: true,
               kind: "loop",
             } as const;

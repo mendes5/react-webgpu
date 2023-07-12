@@ -13,12 +13,14 @@ import { useRefTrap } from "~/webgpu/use-gpu";
 import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
 import {
   createBindGroup,
+  createBindGroupLayout,
   createBuffer,
   createRenderPipeline,
   createSampler,
   createShaderModule,
   createTexture,
   pushFrame,
+  pushFrameG,
   queueEffect,
 } from "~/webgpu/web-gpu-plugin";
 
@@ -177,7 +179,7 @@ const Example: FC = () => {
         ],
       });
 
-      yield pushFrame(({ time, encoder, queue }) => {
+      yield pushFrameG(function* ({ time, encoder, queue }) {
         time *= 0.001;
 
         const renderPassDescriptor: GPURenderPassDescriptor = {

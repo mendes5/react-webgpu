@@ -66,7 +66,12 @@ export const createFiber = (): Fiber => {
 
 export type PluginInstance = {
   matches(value: unknown): boolean;
-  exec(value: unknown, thread: CallSite[], frameContext: FrameContext): unknown;
+  exec(
+    value: unknown,
+    thread: CallSite[],
+    frameContext: FrameContext,
+    plugins: PluginInstance[]
+  ): unknown;
   dispose?(frameContext: FrameContext): void;
 };
 
@@ -120,7 +125,7 @@ export const enterScopeAsync = async (
     if (value)
       for (const plugin of plugins) {
         if (plugin.matches(value)) {
-          return plugin.exec(value, key, frameContext);
+          return plugin.exec(value, key, frameContext, plugins);
         }
       }
     return value;
@@ -186,7 +191,7 @@ export const enterScopeSync = (
     if (value)
       for (const plugin of plugins) {
         if (plugin.matches(value)) {
-          return plugin.exec(value, key, frameContext);
+          return plugin.exec(value, key, frameContext, plugins);
         }
       }
     return value;

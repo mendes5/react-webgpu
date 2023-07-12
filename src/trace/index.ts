@@ -4,6 +4,7 @@ import {
   enterScopeSync,
   enterScopeAsync,
   type Plugin,
+  PluginInstance,
 } from "./core";
 import { keyPlugin } from "./plugins/key-plugin";
 import { memoPlugin } from "./plugins/memo-plugin";
@@ -98,6 +99,20 @@ export const createSyncClosureFiberRoot = <R>(
   };
 
   tick.dispose = () => disposeRecursive(fiber.traceHead, instantiatedPlugins);
+
+  return tick;
+};
+
+export const createChildSyncClosureFiberRoot = <R>(
+  plugins: PluginInstance[] = []
+): SyncClosureFiberGenerator<R> => {
+  const fiber = createFiber();
+
+  const tick = <R>(closure: Generator<any, R>): R => {
+    return enterScopeSync(closure, fiber, plugins) as R;
+  };
+
+  tick.dispose = () => disposeRecursive(fiber.traceHead, plugins);
 
   return tick;
 };
