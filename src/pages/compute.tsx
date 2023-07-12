@@ -6,7 +6,6 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { useAsyncAction } from "~/utils/hooks";
 import { ToOverlay } from "~/utils/overlay";
 import { useToggle } from "usehooks-ts";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
 import {
   type GPUAction,
   action,
@@ -18,6 +17,7 @@ import {
   createShaderModule,
   queueEffect,
 } from "~/webgpu/web-gpu-plugin";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const Example: FC = () => {
   const input = useMemo(() => new Float32Array([1, 3, 5, 5, 9, 7, 4, 5]), []);
@@ -25,7 +25,7 @@ const Example: FC = () => {
   const [label, toggleLabel] = useToggle();
 
   const { double } =
-    useGPUButBetter(
+    useGPU(
       function* () {
         const shader: GPUShaderModule = yield createShaderModule({
           code: /* wgsl */ `

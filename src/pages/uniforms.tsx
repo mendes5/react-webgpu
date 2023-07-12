@@ -10,7 +10,7 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useGPU } from "~/webgpu/use-gpu";
 import {
   type GPUAction,
   action,
@@ -39,7 +39,7 @@ const Example: FC = () => {
   const [force, setForce] = useState(0);
 
   const { randomize } =
-    useGPUButBetter(
+    useGPU(
       function* () {
         console.time("ReRun");
         const shader: GPUShaderModule = yield createShaderModule({

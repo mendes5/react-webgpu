@@ -4,7 +4,7 @@ import Head from "next/head";
 import { type FC } from "react";
 import { usePresentationFormat, useWebGPUContext } from "~/webgpu/canvas";
 import { WebGPUApp } from "~/utils/webgpu-app";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useGPU } from "~/webgpu/use-gpu";
 import {
   createRenderPipeline,
   createShaderModule,
@@ -16,7 +16,7 @@ const Example: FC = () => {
 
   const context = useWebGPUContext();
 
-  useGPUButBetter(
+  useGPU(
     function* () {
       const shader: GPUShaderModule = yield createShaderModule({
         label: "our hardcoded red triangle shader",

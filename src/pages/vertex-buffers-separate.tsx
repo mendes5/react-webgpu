@@ -11,9 +11,8 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { useGPU, useRefTrap } from "~/webgpu/use-gpu";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
 import {
-  FrameCallback,
+  type FrameCallback,
   action,
   createBindGroup,
   createBuffer,
@@ -106,7 +105,7 @@ const Example: FC = () => {
   const objectCountRef = useRefTrap(kNumObjects);
 
   const { randomize } =
-    useGPUButBetter(
+    useGPU(
       function* () {
         const shader: GPUShaderModule = yield createShaderModule({
           label: "Separate vertex buffers",

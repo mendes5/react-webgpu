@@ -11,9 +11,10 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { createCircleVertices } from "~/utils/geometry";
-import { type FrameCallback, useRefTrap } from "~/webgpu/use-gpu";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useRefTrap } from "~/webgpu/use-gpu";
+import { useGPU } from "~/webgpu/use-gpu";
 import {
+  type FrameCallback,
   action,
   createBindGroup,
   createBuffer,
@@ -54,7 +55,7 @@ const Example: FC = () => {
   const objectCountRef = useRefTrap(kNumObjects);
 
   const { randomize } =
-    useGPUButBetter(
+    useGPU(
       function* () {
         const shader: GPUShaderModule = yield createShaderModule({
           label: "Vertex buffer example shader",

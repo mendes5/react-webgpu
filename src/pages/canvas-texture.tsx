@@ -23,8 +23,8 @@ import {
   createTexture,
   pushFrame,
 } from "~/webgpu/web-gpu-plugin";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
 import { key } from "~/trace";
+import { useGPU } from "~/webgpu/use-gpu";
 
 const makeMipGenerator = function* (texture: GPUTexture) {
   const shader: GPUShaderModule = yield createShaderModule({
@@ -173,7 +173,7 @@ const Example: FC = () => {
 
   const presentationFormat = usePresentationFormat();
 
-  useGPUButBetter(
+  useGPU(
     function* () {
       const shader: GPUShaderModule = yield createShaderModule({
         label: "Canvas texture shader",

@@ -12,7 +12,7 @@ import { ToOverlay } from "~/utils/overlay";
 import { useAsyncResource } from "~/utils/hooks";
 import { getSourceSize, loadImageBitmap } from "~/utils/mips";
 import { type H } from "~/utils/other";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useGPU } from "~/webgpu/use-gpu";
 import {
   createBindGroup,
   createBuffer,
@@ -51,7 +51,7 @@ const Example: FC = () => {
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
-  useGPUButBetter(
+  useGPU(
     function* () {
       const shader: GPUShaderModule = yield createShaderModule({
         label: "External texture shader module",

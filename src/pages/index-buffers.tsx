@@ -11,7 +11,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { rand, range } from "~/utils/other";
 import { useRefTrap } from "~/webgpu/use-gpu";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useGPU } from "~/webgpu/use-gpu";
 import {
   type FrameCallback,
   action,
@@ -104,7 +104,7 @@ const Example: FC = () => {
   const objectCountRef = useRefTrap(10);
 
   const { randomize } =
-    useGPUButBetter(
+    useGPU(
       function* () {
         const shader: GPUShaderModule = yield createShaderModule({
           label: "Index example shader",

@@ -25,7 +25,7 @@ import {
   queueEffect,
   renderEffect,
 } from "~/webgpu/web-gpu-plugin";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useGPU } from "~/webgpu/use-gpu";
 import { type H } from "~/utils/other";
 
 const renderMips = r(function* (texture: GPUTexture) {
@@ -164,7 +164,7 @@ const Example: FC = () => {
 
   const toggleRef = useRefTrap(0);
 
-  useGPUButBetter(
+  useGPU(
     function* () {
       if (
         texture1.type !== "success" ||

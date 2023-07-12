@@ -10,7 +10,7 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { useRefTrap } from "~/webgpu/use-gpu";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useGPU } from "~/webgpu/use-gpu";
 import {
   createBindGroup,
   createBindGroupLayout,
@@ -68,7 +68,7 @@ const Example: FC = () => {
   const presentationFormat = usePresentationFormat();
   const context = useWebGPUContext();
 
-  useGPUButBetter(
+  useGPU(
     function* () {
       const shader: GPUShaderModule = yield createShaderModule({
         label: "Texture Shader",

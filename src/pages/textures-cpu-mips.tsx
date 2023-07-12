@@ -12,7 +12,7 @@ import { ToOverlay } from "~/utils/overlay";
 import { type MipTexture, generateMips } from "~/utils/mips";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useRefTrap } from "~/webgpu/use-gpu";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useGPU } from "~/webgpu/use-gpu";
 import {
   createBindGroup,
   createBuffer,
@@ -65,7 +65,7 @@ const Example: FC = () => {
 
   const presentationFormat = usePresentationFormat();
 
-  useGPUButBetter(
+  useGPU(
     function* () {
       const shader: GPUShaderModule = yield createShaderModule({
         label: "CPU Mips shader",

@@ -7,7 +7,7 @@ import { WebGPUApp } from "~/utils/webgpu-app";
 import { useToggle } from "usehooks-ts";
 import { ToOverlay } from "~/utils/overlay";
 import { match } from "ts-pattern";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useGPU } from "~/webgpu/use-gpu";
 import {
   createRenderPipeline,
   createShaderModule,
@@ -70,7 +70,7 @@ const Example: FC = () => {
 
   const context = useWebGPUContext();
 
-  useGPUButBetter(
+  useGPU(
     function* () {
       const $interpolate = formatInterpolation(type, sampling);
       const shader: GPUShaderModule = yield createShaderModule({

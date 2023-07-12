@@ -15,12 +15,8 @@ import { match } from "ts-pattern";
 import { log } from "./logger";
 import { ToOverlay } from "~/utils/overlay";
 import { type H, shortId } from "~/utils/other";
-import {
-  GPURendererContext,
-  type ActionBag,
-  GPUActionContext,
-  type FrameCallback,
-} from "./use-gpu";
+import { GPURendererContext, GPUActionContext } from "./use-gpu";
+import { type ActionBag, type FrameCallback } from "./web-gpu-plugin";
 
 const ReRenderContext = createContext((): void => undefined);
 

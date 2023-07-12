@@ -12,7 +12,7 @@ import {
   useWebGPUCanvas,
   useWebGPUContext,
 } from "~/webgpu/canvas";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { useGPU } from "~/webgpu/use-gpu";
 import {
   createBindGroup,
   createBindGroupLayout,
@@ -30,7 +30,7 @@ const Example: FC = () => {
 
   const presentationFormat = usePresentationFormat();
 
-  useGPUButBetter(
+  useGPU(
     function* () {
       console.time("run");
       const shader: GPUShaderModule = yield createShaderModule({

@@ -13,7 +13,6 @@ import { useAsyncResource } from "~/utils/hooks";
 import { useGPU } from "~/webgpu/use-gpu";
 import { getSourceSize } from "~/utils/mips";
 import type { H } from "~/utils/other";
-import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
 import {
   createBindGroup,
   createBuffer,
@@ -58,7 +57,7 @@ const Example: FC = () => {
     return { video };
   }, []);
 
-  useGPUButBetter(
+  useGPU(
     function* () {
       if (video.type !== "success") return;
       const shader: GPUShaderModule = yield createShaderModule({
