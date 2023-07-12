@@ -787,6 +787,7 @@ export const webGPUPluginCreator =
               enabled: true,
               kind: "loop",
             } as const;
+            ctx.frameDeps[key] = [];
             rendererContext.set(key, frame);
             return frame;
           }
@@ -830,6 +831,7 @@ export const webGPUPluginCreator =
               enabled: true,
               kind: "loop",
             } as const;
+            ctx.frameDeps[key] = [];
             rendererContext.set(key, frame);
             return frame;
           }

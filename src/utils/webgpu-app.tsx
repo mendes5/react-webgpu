@@ -22,29 +22,25 @@ export const WebGPUApp: FC<PropsWithChildren<Props>> = ({
   downscale,
 }) => {
   return (
-    <Inspector name="root">
-      <WebGPUDevice
-        loading={<h1>Loading</h1>}
-        fallback={<h1>Failed to create GPUDevice</h1>}
-      >
-        {canvas ? (
-          <WebGPUCanvas
-            downscale={downscale}
-            fullscreen={fullscreen}
-            fallback={<h1>Failed to create Canvas</h1>}
-            width={width}
-            height={height}
-          >
-            {children}
-          </WebGPUCanvas>
-        ) : (
-          children
-        )}
-      </WebGPUDevice>
+    <>
+      {canvas ? (
+        <WebGPUCanvas
+          downscale={downscale}
+          fullscreen={fullscreen}
+          fallback={<h1>Failed to create Canvas</h1>}
+          width={width}
+          height={height}
+        >
+          {children}
+        </WebGPUCanvas>
+      ) : (
+        children
+      )}
+
       <Overlay />
       <ToOverlayEnd>
         <Menu />
       </ToOverlayEnd>
-    </Inspector>
+    </>
   );
 };

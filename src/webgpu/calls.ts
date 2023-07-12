@@ -11,8 +11,6 @@ export function configureContextPresentation(
 ) {
   const presentationFormat = getPresentationFormat();
 
-  log(`Presentation format configured: "${presentationFormat}"`);
-
   context.configure({
     device,
     format: presentationFormat,
