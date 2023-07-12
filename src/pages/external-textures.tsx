@@ -10,9 +10,19 @@ import {
 import { WebGPUApp } from "~/utils/webgpu-app";
 import { ToOverlay } from "~/utils/overlay";
 import { useAsyncResource } from "~/utils/hooks";
-import { useGPU } from "~/webgpu/use-gpu";
 import { getSourceSize, loadImageBitmap } from "~/utils/mips";
 import { type H } from "~/utils/other";
+import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import {
+  createBindGroup,
+  createBuffer,
+  createRenderPipeline,
+  createSampler,
+  createShaderModule,
+  createTexture,
+  pushFrame,
+  queueEffect,
+} from "~/webgpu/web-gpu-plugin";
 
 const AddressMode = {
   clampToEdge: "clamp-to-edge",
@@ -41,9 +51,9 @@ const Example: FC = () => {
   const canvas = useWebGPUCanvas();
   const context = useWebGPUContext();
 
-  useGPU(
-    async ({ device, frame, gpu }) => {
-      const shader = gpu.createShaderModule({
+  useGPUButBetter(
+    function* () {
+      const shader: GPUShaderModule = yield createShaderModule({
         label: "External texture shader module",
         code: /* wgsl */ `
           struct OurVertexShaderOutput {
@@ -87,7 +97,7 @@ const Example: FC = () => {
         `,
       });
 
-      const pipeline = await gpu.createRenderPipelineAsync({
+      const pipeline: GPURenderPipeline = yield createRenderPipeline({
         label: "External texture render pipeline",
         layout: "auto",
         vertex: {
@@ -105,7 +115,7 @@ const Example: FC = () => {
       if (state.type === "success") {
         const size = getSourceSize(state.value);
 
-        texture = gpu.createTexture({
+        texture = yield createTexture({
           label: "External texture",
           format: "rgba8unorm",
           size: getSourceSize(state.value),
@@ -115,17 +125,21 @@ const Example: FC = () => {
             GPUTextureUsage.RENDER_ATTACHMENT,
         });
 
-        device.queue.copyExternalImageToTexture(
-          { source: state.value, flipY: true },
-          { texture },
-          { width: size[0], height: size[1] }
+        yield queueEffect(
+          (q) =>
+            q.copyExternalImageToTexture(
+              { source: state.value, flipY: true },
+              { texture },
+              { width: size[0], height: size[1] }
+            ),
+          [texture, state.value]
         );
       }
 
       const uniformBufferSize =
         2 * 4 + // scale is 2 32bit floats (4bytes each)
         2 * 4; // offset is 2 32bit floats (4bytes each)
-      const uniformBuffer = gpu.createBuffer({
+      const uniformBuffer: GPUBuffer = yield createBuffer({
         label: "uniforms for quad",
         size: uniformBufferSize,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -138,7 +152,7 @@ const Example: FC = () => {
       const kScaleOffset = 0;
       const kOffsetOffset = 2;
 
-      const sampler = gpu.createSampler({
+      const sampler: GPUSampler = yield createSampler({
         label: "External texture sampler",
         addressModeU: modeU as GPUAddressMode,
         addressModeV: modeV as GPUAddressMode,
@@ -147,7 +161,7 @@ const Example: FC = () => {
       });
 
       if (texture) {
-        const bindGroup = device.createBindGroup({
+        const bindGroup: GPUBindGroup = yield createBindGroup({
           layout: pipeline.getBindGroupLayout(0),
           entries: [
             { binding: 0, resource: sampler },
@@ -156,7 +170,7 @@ const Example: FC = () => {
           ],
         });
 
-        frame.main!(({ time, encoder }) => {
+        yield pushFrame(({ time, encoder, queue }) => {
           time *= 0.001;
 
           const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -187,8 +201,7 @@ const Example: FC = () => {
               kOffsetOffset
             ); // set the offset
 
-            // copy the values from JavaScript to the GPU
-            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+            queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
             pass.draw(6);
           }
