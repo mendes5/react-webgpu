@@ -12,14 +12,24 @@ import { ToOverlay } from "~/utils/overlay";
 import { type Vec3, mat4 } from "~/utils/math";
 import { useAsyncResource } from "~/utils/hooks";
 import { getSourceSize, loadImageBitmap, numMipLevels } from "~/utils/mips";
-import { type GPU_API, useGPU, useRefTrap } from "~/webgpu/use-gpu";
+import { useRefTrap } from "~/webgpu/use-gpu";
+import { key, r } from "~/trace";
+import {
+  createBindGroup,
+  createBuffer,
+  createRenderPipeline,
+  createSampler,
+  createShaderModule,
+  createTexture,
+  pushFrame,
+  queueEffect,
+  renderEffect,
+} from "~/webgpu/web-gpu-plugin";
+import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import { type H } from "~/utils/other";
 
-const renderMips = async (
-  device: GPUDevice,
-  texture: GPUTexture,
-  gpu: GPU_API
-) => {
-  const shader = gpu.createShaderModule({
+const renderMips = r(function* (texture: GPUTexture) {
+  const shader: GPUShaderModule = yield createShaderModule({
     label: "GPU Mips generator shader",
     code: /* wgsl */ `
       struct VSOutput {
@@ -57,12 +67,12 @@ const renderMips = async (
     `,
   });
 
-  const sampler = gpu.createSampler({
+  const sampler: GPUSampler = yield createSampler({
     label: "GPU mips generator sampler",
     minFilter: "linear",
   });
 
-  const pipeline = await gpu.createRenderPipelineAsync({
+  const pipeline: GPURenderPipeline = yield createRenderPipeline({
     label: "GPU mips generator render pipeline",
     layout: "auto",
     vertex: {
@@ -76,9 +86,7 @@ const renderMips = async (
     },
   });
 
-  const encoder = device.createCommandEncoder({
-    label: "mip gen encoder",
-  });
+  const commands: ((encoder: GPUCommandEncoder) => void)[] = [];
 
   let width = texture.width;
   let height = texture.height;
@@ -88,8 +96,8 @@ const renderMips = async (
     width = Math.max(1, (width / 2) | 0);
     height = Math.max(1, (height / 2) | 0);
 
-    const bindGroup = device.createBindGroup({
-      label: "Mipmap bind group layout",
+    const bindGroup: GPUBindGroup = yield createBindGroup({
+      label: `Mipmap bind group layout L=${baseMipLevel}`,
       layout: pipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: sampler },
@@ -105,27 +113,31 @@ const renderMips = async (
 
     ++baseMipLevel;
 
-    const renderPassDescriptor = {
-      label: "our basic canvas renderPass",
-      colorAttachments: [
-        {
-          view: texture.createView({ baseMipLevel, mipLevelCount: 1 }),
-          loadOp: "clear",
-          storeOp: "store",
-        } as const,
-      ],
-    };
+    const copy = baseMipLevel;
+    commands.push((encoder) => {
+      const renderPassDescriptor = {
+        label: "our basic canvas renderPass",
+        colorAttachments: [
+          {
+            view: texture.createView({ baseMipLevel: copy, mipLevelCount: 1 }),
+            loadOp: "clear",
+            storeOp: "store",
+          } as const,
+        ],
+      };
 
-    const pass = encoder.beginRenderPass(renderPassDescriptor);
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.draw(6); // call our vertex shader 6 times
-    pass.end();
+      const pass = encoder.beginRenderPass(renderPassDescriptor);
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(6); // call our vertex shader 6 times
+      pass.end();
+    });
   }
 
-  const commandBuffer = encoder.finish();
-  device.queue.submit([commandBuffer]);
-};
+  yield renderEffect(({ encoder }) => {
+    commands.forEach((command) => command(encoder));
+  }, []);
+});
 
 const Example: FC = () => {
   const canvas = useWebGPUCanvas();
@@ -141,20 +153,19 @@ const Example: FC = () => {
   );
 
   const texture2 = useAsyncResource(
-    () => loadImageBitmap("/resources/coins.jpg"),
+    () => loadImageBitmap("/resources/Granite_paving_tileable_512x512.jpeg"),
     []
   );
 
   const texture3 = useAsyncResource(
-    () => loadImageBitmap("/resources/Granite_paving_tileable_512x512.jpeg"),
+    () => loadImageBitmap("/resources/coins.jpg"),
     []
   );
 
   const toggleRef = useRefTrap(0);
 
-  useGPU(
-    { texture1, texture2, texture3 },
-    async ({ frame, gpu, device, texture1, texture2, texture3 }) => {
+  useGPUButBetter(
+    function* () {
       if (
         texture1.type !== "success" ||
         texture2.type !== "success" ||
@@ -162,7 +173,7 @@ const Example: FC = () => {
       )
         return;
 
-      const shader = gpu.createShaderModule({
+      const shader: GPUShaderModule = yield createShaderModule({
         label: "GPU Mips renderer shader",
         code: /* wgsl */ `
           struct OurVertexShaderOutput {
@@ -205,7 +216,7 @@ const Example: FC = () => {
         `,
       });
 
-      const pipeline = await gpu.createRenderPipelineAsync({
+      const pipeline: GPURenderPipeline = yield createRenderPipeline({
         label: "GPU Mips example render pipeline",
         layout: "auto",
         vertex: {
@@ -220,7 +231,7 @@ const Example: FC = () => {
       });
 
       const size1 = getSourceSize(texture1.value);
-      const texture1R = gpu.createTexture({
+      const texture1R: H<GPUTexture> = yield createTexture({
         label: "F texture",
         size: size1,
         format: "rgba8unorm",
@@ -230,15 +241,20 @@ const Example: FC = () => {
           GPUTextureUsage.COPY_DST |
           GPUTextureUsage.RENDER_ATTACHMENT,
       });
-      device.queue.copyExternalImageToTexture(
-        { source: texture1.value, flipY: true },
-        { texture: texture1R },
-        { width: size1[0], height: size1[1] }
+
+      yield queueEffect(
+        (q) =>
+          q.copyExternalImageToTexture(
+            { source: texture1.value, flipY: true },
+            { texture: texture1R },
+            { width: size1[0], height: size1[1] }
+          ),
+        [texture1]
       );
-      await renderMips(device, texture1R, gpu);
+      yield renderMips(texture1R);
 
       const size2 = getSourceSize(texture2.value);
-      const texture2R = gpu.createTexture({
+      const texture2R: H<GPUTexture> = yield createTexture({
         label: "Coins texture",
         size: size2,
         format: "rgba8unorm",
@@ -248,15 +264,19 @@ const Example: FC = () => {
           GPUTextureUsage.COPY_DST |
           GPUTextureUsage.RENDER_ATTACHMENT,
       });
-      device.queue.copyExternalImageToTexture(
-        { source: texture2.value },
-        { texture: texture2R },
-        { width: size2[0], height: size2[1] }
+      yield queueEffect(
+        (q) =>
+          q.copyExternalImageToTexture(
+            { source: texture2.value },
+            { texture: texture2R },
+            { width: size2[0], height: size2[1] }
+          ),
+        [texture2]
       );
-      await renderMips(device, texture2R, gpu);
+      yield renderMips(texture2R);
 
       const size3 = getSourceSize(texture3.value);
-      const texture3R = gpu.createTexture({
+      const texture3R: H<GPUTexture> = yield createTexture({
         label: "Cobble texture",
         size: size3,
         format: "rgba8unorm",
@@ -266,12 +286,16 @@ const Example: FC = () => {
           GPUTextureUsage.COPY_DST |
           GPUTextureUsage.RENDER_ATTACHMENT,
       });
-      device.queue.copyExternalImageToTexture(
-        { source: texture3.value },
-        { texture: texture3R },
-        { width: size3[0], height: size3[1] }
+      yield queueEffect(
+        (q) =>
+          q.copyExternalImageToTexture(
+            { source: texture3.value },
+            { texture: texture3R },
+            { width: size3[0], height: size3[1] }
+          ),
+        [texture3]
       );
-      await renderMips(device, texture3R, gpu);
+      yield renderMips(texture3R);
 
       const objectInfos = [] as {
         bindGroups: GPUBindGroup[];
@@ -281,7 +305,8 @@ const Example: FC = () => {
       }[];
 
       for (let i = 0; i < 8; ++i) {
-        const sampler = device.createSampler({
+        const unkey: () => void = yield key(i);
+        const sampler = yield createSampler({
           addressModeU: "repeat",
           addressModeV: "repeat",
           magFilter: i & 1 ? "linear" : "nearest",
@@ -289,28 +314,30 @@ const Example: FC = () => {
           mipmapFilter: i & 4 ? "linear" : "nearest",
         });
 
-        // create a buffer for the uniform values
-        const uniformBufferSize = 16 * 4; // matrix is 16 32bit floats (4bytes each)
-        const uniformBuffer = device.createBuffer({
+        const uniformBufferSize = 16 * 4;
+        const uniformBuffer = yield createBuffer({
           label: "uniforms for quad",
           size: uniformBufferSize,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
-        // create a typedarray to hold the values for the uniforms in JavaScript
         const uniformValues = new Float32Array(uniformBufferSize / 4);
         const matrix = uniformValues.subarray(kMatrixOffset, 16);
 
-        const bindGroups = [texture1R, texture2R, texture3R].map((texture) =>
-          device.createBindGroup({
+        const bindGroups: GPUBindGroup[] = [];
+        for (const texture of [texture1R, texture2R, texture3R]) {
+          const unkey: () => void = yield key(texture.instanceId);
+          const value: GPUBindGroup = yield createBindGroup({
             layout: pipeline.getBindGroupLayout(0),
             entries: [
               { binding: 0, resource: sampler },
               { binding: 1, resource: texture.createView() },
               { binding: 2, resource: { buffer: uniformBuffer } },
             ],
-          })
-        );
+          });
+          bindGroups.push(value);
+          unkey();
+        }
 
         // Save the data we need to render this object.
         const info = {
@@ -320,9 +347,10 @@ const Example: FC = () => {
           uniformBuffer,
         };
         objectInfos.push(info);
+        unkey();
       }
 
-      frame.main!(({ encoder }) => {
+      yield pushFrame(({ encoder, queue }) => {
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
           colorAttachments: [
@@ -375,8 +403,7 @@ const Example: FC = () => {
             mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
             mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
 
-            // copy the values from JavaScript to the GPU
-            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+            queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
             pass.setBindGroup(0, bindGroup);
             pass.draw(6); // call our vertex shader 6 times
@@ -385,7 +412,7 @@ const Example: FC = () => {
         pass.end();
       }, []);
     },
-    [presentationFormat]
+    [presentationFormat, texture1.type, texture2.type, texture3.type]
   );
 
   return (

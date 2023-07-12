@@ -80,6 +80,13 @@ export const queueEffect = r(function* (
   return yield { WebGPU, call: { queueEffect, deps } };
 });
 
+export const renderEffect = r(function* (
+  renderEffect: (bag: RenderEffectBag) => void,
+  deps: unknown[]
+) {
+  return yield { WebGPU, call: { renderEffect, deps } };
+});
+
 export const pushFrame = r(function* (
   frame: (bag: FrameBag) => void,
   deps?: unknown[]
@@ -106,6 +113,11 @@ export type ActionBag = {
   time: number;
   encoder: GPUCommandEncoder;
   renderToken: Promise<number>;
+};
+
+export type RenderEffectBag = {
+  encoder: GPUCommandEncoder;
+  queue: GPUQueue;
 };
 
 type PluginCalls =
@@ -153,6 +165,10 @@ type PluginCalls =
   | {
       queueEffect: (queue: GPUQueue) => void;
       deps: unknown[];
+    }
+  | {
+      renderEffect: (bag: RenderEffectBag) => void;
+      deps: unknown[];
     };
 
 type PluginYield = {
@@ -169,6 +185,7 @@ interface WebGPUFrameContext extends FrameContext {
   calls?: Record<string, unknown>;
   frameDeps?: Record<string, unknown[]>;
   queueEffectsDeps?: Record<string, unknown[]>;
+  renderEffectsDeps?: Record<string, unknown[]>;
   actionGenerators?: Record<string, SyncClosureFiberGenerator>;
   frameGenerators?: Record<string, SyncClosureFiberGenerator>;
   // Local Resources
@@ -329,6 +346,10 @@ export const webGPUPluginCreator =
 
         if (!ctx.queueEffectsDeps) {
           ctx.queueEffectsDeps = {};
+        }
+
+        if (!ctx.renderEffectsDeps) {
+          ctx.renderEffectsDeps = {};
         }
 
         if (!ctx.frameGenerators) {
@@ -675,6 +696,20 @@ export const webGPUPluginCreator =
               `Ran queue effect for fiber ${fiberHash} since its dependencies changed`
             );
             call.queueEffect(device.queue);
+          }
+        } else if ("renderEffect" in call) {
+          const cached = ctx.renderEffectsDeps[key];
+
+          if (!isSameDependencies(cached, call.deps)) {
+            ctx.renderEffectsDeps[key] = call.deps;
+            log(
+              `Ran render effect for fiber ${fiberHash} since its dependencies changed`
+            );
+            const encoder = device.createCommandEncoder({
+              label: `For fiber ${fiberHash}`,
+            });
+            call.renderEffect({ encoder, queue: device.queue });
+            device.queue.submit([encoder.finish()]);
           }
         } else if ("action" in call) {
           // TODO: allow for params
