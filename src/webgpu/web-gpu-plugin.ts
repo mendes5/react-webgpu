@@ -277,13 +277,13 @@ export const webGPUPluginCreator =
         if (ctx.textures)
           for (const texture of Object.values(ctx.textures)) {
             texture.value.destroy();
-            log(`Destroyed texture ${shortId(texture.hash)}`);
+            log(`Destroyed texture ${shortId(texture.value.instanceId)}`);
           }
         if (ctx.buffers)
           for (const buffer of ctx.buffers.values()) {
             // TODO: do we need to check if it is mapped?
             buffer.value.destroy();
-            log(`Destroyed buffer ${shortId(buffer.hash)}`);
+            log(`Destroyed buffer ${shortId(buffer.value.instanceId)}`);
           }
         if (ctx.actionGenerators)
           for (const fiber of Object.values(ctx.actionGenerators)) {
