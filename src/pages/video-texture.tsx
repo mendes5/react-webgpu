@@ -13,6 +13,17 @@ import { useAsyncResource } from "~/utils/hooks";
 import { useGPU } from "~/webgpu/use-gpu";
 import { getSourceSize } from "~/utils/mips";
 import type { H } from "~/utils/other";
+import { useGPUButBetter } from "~/webgpu/use-gpu-but-better";
+import {
+  createBindGroup,
+  createBuffer,
+  createRenderPipeline,
+  createSampler,
+  createShaderModule,
+  createTexture,
+  pushFrame,
+} from "~/webgpu/web-gpu-plugin";
+import { key } from "~/trace";
 
 function startPlayingAndWaitForVideo(video: HTMLVideoElement) {
   return new Promise((resolve, reject) => {
@@ -47,11 +58,10 @@ const Example: FC = () => {
     return { video };
   }, []);
 
-  useGPU(
-    { video },
-    async ({ frame, gpu, device, video }) => {
+  useGPUButBetter(
+    function* () {
       if (video.type !== "success") return;
-      const shader = gpu.createShaderModule({
+      const shader: GPUShaderModule = yield createShaderModule({
         label: "Dogege shader",
         code: /* wgsl */ `
       struct OurVertexShaderOutput {
@@ -90,7 +100,7 @@ const Example: FC = () => {
       }`,
       });
 
-      const pipeline = await gpu.createRenderPipelineAsync({
+      const pipeline: GPURenderPipeline = yield createRenderPipeline({
         label: "Dogege pipeline",
         layout: "auto",
         vertex: {
@@ -106,7 +116,7 @@ const Example: FC = () => {
 
       const size = getSourceSize(video.value.video);
 
-      const texture = gpu.createTexture({
+      const texture: GPUTexture = yield createTexture({
         format: "rgba8unorm",
         // mipLevelCount: false ? numMipLevels(...size) : 1,
         mipLevelCount: 1,
@@ -117,9 +127,9 @@ const Example: FC = () => {
           GPUTextureUsage.RENDER_ATTACHMENT,
       });
 
-      const updateTexture = () => {
+      const updateTexture = (queue: GPUQueue) => {
         const size = getSourceSize(video.value.video);
-        device.queue.copyExternalImageToTexture(
+        queue.copyExternalImageToTexture(
           { source: video.value.video },
           { texture },
           { width: size[0], height: size[1] }
@@ -138,14 +148,15 @@ const Example: FC = () => {
       }[];
 
       for (let i = 0; i < 8; ++i) {
-        const sampler = gpu.createSampler({
+        const unkey: () => void = yield key(i);
+        const sampler: GPUSampler = yield createSampler({
           label: `Sampler ${i} for dogege`,
           addressModeU: "repeat",
           addressModeV: "repeat",
         });
 
         const uniformBufferSize = 16 * 4;
-        const uniformBuffer = gpu.createBuffer({
+        const uniformBuffer: H<GPUBuffer> = yield createBuffer({
           label: `uniforms buffer for quad ${i}`,
           size: uniformBufferSize,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -154,7 +165,7 @@ const Example: FC = () => {
         const uniformValues = new Float32Array(uniformBufferSize / 4);
         const matrix = uniformValues.subarray(kMatrixOffset, 16);
 
-        const bindGroup = device.createBindGroup({
+        const bindGroup: GPUBindGroup = yield createBindGroup({
           layout: pipeline.getBindGroupLayout(0),
           entries: [
             { binding: 0, resource: sampler },
@@ -170,10 +181,11 @@ const Example: FC = () => {
           uniformBuffer,
         };
         objectInfos.push(info);
+        unkey();
       }
 
-      frame.main!(({ encoder }) => {
-        updateTexture();
+      yield pushFrame(({ queue, encoder }) => {
+        updateTexture(queue);
 
         const renderPassDescriptor: GPURenderPassDescriptor = {
           label: "our basic canvas renderPass",
@@ -225,7 +237,7 @@ const Example: FC = () => {
             mat4.scale(matrix, [1, zDepth * 2, 1], matrix);
             mat4.translate(matrix, [-0.5, -0.5, 0], matrix);
 
-            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+            queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
             pass.setBindGroup(0, bindGroup);
             pass.draw(6);
@@ -234,7 +246,7 @@ const Example: FC = () => {
         pass.end();
       });
     },
-    [presentationFormat]
+    [presentationFormat, video.type]
   );
 
   return null;
